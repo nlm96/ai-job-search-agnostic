@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# jobsearch-gates: fixed test-gate runner for developing the privacy layer.
+#
+# Why it exists: the coding agent's own Bash sandbox forbids user namespaces
+# and hides agent credentials, so it cannot test the bubblewrap launcher.
+# This runner is excluded from the agent sandbox by an exact-match
+# `sandbox.excludedCommands` entry, and then puts the code under test into
+# its OWN bubblewrap jail, which is stricter than the agent sandbox in every
+# way except that it permits nested user namespaces:
+#   - no network
+#   - an empty tmpfs $HOME (no credentials, no shell config, no agent state)
+#   - no /mnt/c, no /tmp from the host
+#   - only a disposable clone of the committed HEAD is writable
+#
+# Install (by the owner, after reviewing this file):
+#   install -m 755 privacy/dev/jobsearch-gates ~/.local/bin/jobsearch-gates
+# The installed copy lives outside the agent's writable area, so the agent
+# cannot change what runs unsandboxed. Changes take effect only on reinstall.
+#
+# Usage: jobsearch-gates test
+#   Tests the committed HEAD of the repo below. Uncommitted changes are NOT
+#   tested, by design: a gate result always refers to one commit.
+set -euo pipefail
+
+REPO="$HOME/career/ai-job-search-agnostic"
+TIMEOUT=1800
+
+case "${1:-}" in
+  test) ;;
+  *) echo "usage: jobsearch-gates test" >&2; exit 64 ;;
+esac
+
+work=$(mktemp -d /tmp/jobsearch-gates.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+
+git clone -q --no-hardlinks "$REPO" "$work/repo"
+commit=$(git -C "$work/repo" rev-parse --short HEAD)
+branch=$(git -C "$REPO" branch --show-current)
+echo "== jobsearch-gates test  branch=$branch  commit=$commit"
+
+ro_if_exists() { [ -e "$1" ] && printf -- '--ro-bind\0%s\0%s\0' "$1" "$1"; return 0; }
+
+mapfile -d '' extra < <(
+  ro_if_exists /var/lib/texmf
+  ro_if_exists /var/cache/fontconfig
+)
+
+set +e
+bwrap \
+  --die-with-parent --new-session \
+  --unshare-all \
+  --ro-bind /usr /usr \
+  --symlink usr/bin /bin --symlink usr/lib /lib \
+  --symlink usr/lib64 /lib64 --symlink usr/sbin /sbin \
+  --ro-bind /etc /etc \
+  "${extra[@]}" \
+  --proc /proc --dev /dev --tmpfs /tmp \
+  --tmpfs /home --dir "$HOME" \
+  --bind "$work/repo" /work/repo \
+  --ro-bind "$REPO/.venv" /work/repo/.venv \
+  --chdir /work/repo \
+  --clearenv \
+  --setenv HOME "$HOME" \
+  --setenv PATH /work/repo/.venv/bin:/usr/bin:/bin \
+  --setenv LANG C.UTF-8 \
+  --setenv JOBSEARCH_GATES 1 \
+  -- bash -o pipefail -c '
+    rc=0
+    echo "-- upstream suite (tests/)"
+    timeout '"$TIMEOUT"' python -m unittest discover -s tests -t . 2>&1 | tail -4 || rc=1
+    echo "-- privacy suite (privacy/tests/)"
+    timeout '"$TIMEOUT"' python -m unittest discover -s privacy/tests -t . -v 2>&1 || rc=1
+    exit $rc
+  '
+rc=$?
+set -e
+
+if [ $rc -eq 0 ]; then echo "== GATE PASS  commit=$commit"; else echo "== GATE FAIL  commit=$commit  rc=$rc"; fi
+exit $rc
