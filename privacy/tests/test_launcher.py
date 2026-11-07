@@ -133,7 +133,7 @@ echo "## symlink";         ln -s "$R/private" /tmp/p && cat /tmp/p/* 2>&1
 echo "## proc root";       for p in /proc/[0-9]*; do cat "$p/root$R/private/identity.enc" 2>/dev/null; done
 echo "## proc pids";       ls -d /proc/[0-9]* 2>&1 | wc -l
 echo "## nested unmount";  unshare -rm sh -c "umount '$R/private' 2>&1; umount -l '$R/cv/final' 2>&1; cat '$R'/private/* '$R'/cv/final/* 2>&1" 2>&1
-echo "## inherited fds";   for f in /proc/self/fd/*; do cat "$f" 2>/dev/null | head -c 200; done
+echo "## inherited fds";   for f in /proc/self/fd/*; do n=${f##*/}; [ "$n" -gt 2 ] && timeout 2 cat "$f" 2>/dev/null | head -c 200; done; echo
 echo "## windows";         ls /mnt 2>&1; ls /run/WSL 2>&1; echo "WSL_INTEROP=${WSL_INTEROP-unset}"
 echo "## write-through";   echo planted > "$R/private/planted" && echo wrote
 echo "## jail marker";     echo "JOBSEARCH_JAIL=${JOBSEARCH_JAIL-unset}"
@@ -153,6 +153,7 @@ class RedTeam(unittest.TestCase):
             [sys.executable, str(LAUNCHER), "--repo", str(cls.repo), "--",
              "bash", "-c", ATTACKS, "attack", str(cls.repo)],
             capture_output=True, text=True, timeout=120, pass_fds=(fd,),
+            stdin=subprocess.DEVNULL,
             cwd=cls.repo)
         os.close(fd)
         cls.result = r
