@@ -23,6 +23,7 @@ TRICKY = {
     "phone": "+45 (12) 34-56.78",
     "address": "Æblevej 1, 2. tv, 1234 Østby",
     "linkedin": "https://www.linkedin.com/in/%C3%A5se-marie",
+    "github": "https://github.com/aase-marie_dev",
     "website": "https://example.invalid/~aase/cv",
 }
 

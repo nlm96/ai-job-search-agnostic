@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs privacy/identity_cli.py with the repo's own venv in isolated mode (-I: no
+# user site-packages, no PYTHON* variables, no current directory on the path).
+# Use this path explicitly rather than a PATH lookup.
+here=$(cd "$(dirname "$0")/../.." && pwd -P)
+exec "$here/.venv/bin/python" -I "$here/privacy/identity_cli.py" "$@"
