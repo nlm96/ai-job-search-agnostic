@@ -62,6 +62,14 @@ class BuildArgv(unittest.TestCase):
             i = argv.index(str(self.repo / rel))
             self.assertEqual(argv[i - 1], "--tmpfs", rel)
 
+    def test_masked_set_is_pinned(self):
+        # Iterating MASKED_REPO_DIRS cannot notice an entry being dropped.
+        self.assertEqual(set(jobsearch.MASKED_REPO_DIRS),
+                         {"private", "cv/final", "cover_letters/final"})
+        self.assertEqual(set(SECRET), {f"{d}/{n}" for d, n in (
+            ("private", "identity.enc"), ("cv/final", "acme_dev.pdf"),
+            ("cover_letters/final", "acme_dev.pdf"))})
+
     def test_masks_come_after_root_bind(self):
         argv = jobsearch.build_argv(self.repo, ["true"])
         root_bind = argv.index("--bind")
