@@ -34,6 +34,11 @@ KNOWN_CLIS = ("claude", "codex", "copilot", "agy")
 JAIL_MARKER = "JOBSEARCH_JAIL"
 
 
+# On WSL /etc/resolv.conf links into /mnt/wsl/, which HIDDEN_HOST_DIRS hides;
+# without re-exposing the link target the agent has no DNS.
+KEEP_VISIBLE_LINKS = ("/etc/resolv.conf",)
+
+
 class LauncherError(Exception):
     pass
 
@@ -70,6 +75,18 @@ def clean_env(env: dict[str, str]) -> dict[str, str]:
     return env
 
 
+def keep_visible(links) -> list[str]:
+    """Re-bind, read-only, link targets that fall inside a hidden dir."""
+    argv = []
+    for link in links:
+        target = os.path.realpath(link)
+        hidden = any(target == d or target.startswith(d + "/")
+                     for d in HIDDEN_HOST_DIRS)
+        if hidden and os.path.isfile(target):
+            argv += ["--ro-bind", target, target]
+    return argv
+
+
 def build_argv(repo: Path, command: list[str]) -> list[str]:
     argv = ["bwrap", "--die-with-parent",
             "--unshare-pid", "--unshare-ipc", "--unshare-cgroup-try",
@@ -78,6 +95,7 @@ def build_argv(repo: Path, command: list[str]) -> list[str]:
     for d in HIDDEN_HOST_DIRS:
         if os.path.isdir(d):
             argv += ["--tmpfs", d]
+    argv += keep_visible(KEEP_VISIBLE_LINKS)
     for d in check_masked_dirs(repo):
         argv += ["--tmpfs", str(d)]
     argv += ["--chdir", os.getcwd(), "--"] + command

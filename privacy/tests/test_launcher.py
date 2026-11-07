@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from privacy.launcher import jobsearch
@@ -102,6 +103,37 @@ class BuildArgv(unittest.TestCase):
         (self.repo / "cv").symlink_to(self.base / "cv_real")
         with self.assertRaises(jobsearch.LauncherError):
             jobsearch.build_argv(self.repo, ["true"])
+
+
+class KeepVisible(unittest.TestCase):
+    def test_rebinds_target_inside_hidden_dir(self):
+        with mock.patch("os.path.realpath", return_value="/mnt/wsl/resolv.conf"), \
+             mock.patch("os.path.isfile", return_value=True):
+            self.assertEqual(jobsearch.keep_visible(["/etc/resolv.conf"]),
+                             ["--ro-bind", "/mnt/wsl/resolv.conf",
+                              "/mnt/wsl/resolv.conf"])
+
+    def test_ignores_target_outside_hidden_dirs(self):
+        with mock.patch("os.path.realpath", return_value="/run/systemd/resolve/x"), \
+             mock.patch("os.path.isfile", return_value=True):
+            self.assertEqual(jobsearch.keep_visible(["/etc/resolv.conf"]), [])
+
+    def test_prefix_is_not_enough(self):
+        with mock.patch("os.path.realpath", return_value="/mntx/resolv.conf"), \
+             mock.patch("os.path.isfile", return_value=True):
+            self.assertEqual(jobsearch.keep_visible(["/etc/resolv.conf"]), [])
+
+    def test_rebind_comes_after_hiding(self):
+        base = Path(tempfile.mkdtemp())
+        try:
+            repo = make_repo(base)
+            with mock.patch.object(jobsearch, "keep_visible",
+                                   return_value=["--ro-bind", "/mnt/wsl/r", "/mnt/wsl/r"]), \
+                 mock.patch("os.path.isdir", return_value=True):
+                argv = jobsearch.build_argv(repo, ["true"])
+            self.assertGreater(argv.index("/mnt/wsl/r"), argv.index("/mnt"))
+        finally:
+            shutil.rmtree(base)
 
 
 class CleanEnv(unittest.TestCase):
