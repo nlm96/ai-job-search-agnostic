@@ -42,7 +42,7 @@ Branch: `feature/privacy-layer`.
 | 2026-11-08 | 3e47f8f–5f63d6b | resolv.conf fix; first `e2e claude` | e2e PASS |
 | 2026-11-08 | ddd61c7–a9597e4 | identity store, substitution, finalize, identity CLI | gate PASS (77); mutants (jail exposes host, no redaction) FAIL |
 | 2026-11-08 | 40a53bd | read-only-by-default launcher, `private/` only mask | gate PASS (81); mutant (writable root) FAIL |
-| 2026-11-08 | 8c47a9e–4714037 | e2e prompt as plain workflow; write check; canaries in `private/` | needs runner reinstall |
+| 2026-11-08 | 8c47a9e–d3d0468 | e2e prompt as plain workflow; write check; canaries in `private/` | `e2e claude` PASS through the read-only launcher: read visible file, wrote draft, `private/` empty, no canary leaked |
 
 ## Findings
 
@@ -62,8 +62,7 @@ Branch: `feature/privacy-layer`.
 
 ## Next
 
-1. Reinstall the runner, rerun `e2e claude`.
-2. Migration: replace real values with tokens in profile files after `/setup`, run outside agents.
-3. Patches for `apply.md` (5d, 6), `setup.md` (tokens), `reset.md`; AGENTS.md pointer.
-4. e2e modes for codex, copilot, agy.
-5. Custom `/add-template` templates in finalize (now refused).
+1. Migration: replace real values with tokens in profile files after `/setup`, run outside agents.
+2. Patches for `apply.md` (5d, 6), `setup.md` (tokens), `reset.md`; AGENTS.md pointer.
+3. e2e modes for codex, copilot, agy.
+4. Custom `/add-template` templates in finalize (now refused).
