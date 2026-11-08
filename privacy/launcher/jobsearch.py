@@ -68,7 +68,7 @@ CLI_ENV = {
 # Toolchains under home, bound read-only. Nothing here may hold credentials.
 HOME_TOOLCHAIN = (
     ".local/bin", ".local/share/claude", ".local/share/pnpm", ".local/share/uv",
-    ".nvm", ".agents", ".config/uv", ".texlive2025",
+    ".nvm", ".agents", ".config/uv",
 )
 # The jail's own ~/.cache, one per CLI, so no host cache (which can hold
 # tokens, e.g. huggingface) is visible and CLIs cannot poison each other.
@@ -236,6 +236,11 @@ def build_argv(repo: Path, command: list[str], home: Path | None = None,
         argv += ["--ro-bind", str(p), str(p)]
     for d in masked:
         argv += ["--tmpfs", str(d)]
+    # luaotfload's font cache (normally ~/.texlive*/texmf-var, now hidden):
+    # in the jail cache, so lualatex works and the host cache, whose Lua
+    # files run in every later lualatex, cannot be planted into.
+    texmf = (home / ".cache" / "texmf-var") if cli else Path("/tmp/texmf-var")
+    argv += ["--setenv", "TEXMFVAR", str(texmf)]
     cwd = Path(os.getcwd())
     if inside(cwd, home) and not inside(cwd, repo):
         cwd = repo          # would not exist inside the jail

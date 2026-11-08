@@ -227,6 +227,11 @@ class BuildArgv(unittest.TestCase):
             for bad in (".ssh", ".gnupg", ".config/gh", ".aws", ".cache"):
                 self.assertFalse(rel == bad or rel.startswith(bad + "/"), rel)
 
+    def test_tex_cache_in_jail_cache(self):
+        i = self.argv.index("TEXMFVAR")
+        self.assertEqual(self.argv[i - 1:i + 2],
+                         ["--setenv", "TEXMFVAR", str(self.home / ".cache/texmf-var")])
+
     def test_cwd_outside_repo_in_home_falls_back_to_repo(self):
         with mock.patch("os.getcwd", return_value=str(self.home / "career")):
             argv = jobsearch.build_argv(self.repo, ["true"], self.home, "claude")
@@ -488,6 +493,24 @@ class RedTeamWrite(unittest.TestCase):
             for rel in WRITABLE_HOME[cli]:
                 self.assertIn(f"WROTE home:{rel}", out, f"{cli}:\n{out}")
                 self.assertEqual((self.home / rel).read_text(), "evil\n", f"{cli}: {rel}")
+
+
+
+@unittest.skipUnless(IN_GATES and shutil.which("lualatex"),
+                     "needs user namespaces and TeX: runs inside jobsearch-gates")
+class ToolchainWorks(unittest.TestCase):
+    def test_lualatex_compiles_inside_launcher(self):
+        base = scratch_dir()
+        try:
+            repo, home = make_repo(base), make_home(base)
+            (repo / "cv" / "t.tex").write_text(
+                "\\documentclass{article}\\usepackage{fontspec}"
+                "\\begin{document}Hello\\end{document}\n")
+            r = run_launcher(repo, home, 'cd "$1/cv" && lualatex -interaction=nonstopmode t.tex',
+                             str(repo))
+            self.assertTrue((repo / "cv" / "t.pdf").is_file(), r.stdout[-3000:] + r.stderr)
+        finally:
+            shutil.rmtree(base)
 
 
 if __name__ == "__main__":
