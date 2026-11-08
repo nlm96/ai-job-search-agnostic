@@ -130,13 +130,20 @@ setup_cli() {   # $1 = prompt
 agent_rc=0
 run_agent() {   # $1 = prompt
   setup_cli "$1"
-  local resolv bin p
+  local resolv bin p link="$HOME/.local/bin/$cli"
   resolv=$(readlink -f /etc/resolv.conf)
-  bin=$(readlink -f "$HOME/.local/bin/$cli")
-  local -a binds=(--ro-bind "$resolv" "$resolv" --ro-bind "$bin" "$HOME/.local/bin/$cli")
+  bin=$(readlink -f "$link")
+  local -a binds=(--ro-bind "$resolv" "$resolv" --dir "$HOME/.cache" --dir "$HOME/.local/bin")
   for p in "${cli_state[@]}"; do
     [ -e "$p" ] && binds+=(--bind "$p" "$p")
   done
+  # Keep a symlinked binary a symlink at its real path: Codex finds its
+  # helper executables next to the resolved binary.
+  if [ -L "$link" ]; then
+    binds+=(--ro-bind "$bin" "$bin" --symlink "$bin" "$link")
+  else
+    binds+=(--ro-bind "$bin" "$link")
+  fi
   touch "$work/start"
   set +e
   bwrap "${base[@]}" --share-net "${binds[@]}" \

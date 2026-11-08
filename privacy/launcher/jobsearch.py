@@ -64,7 +64,7 @@ READONLY_HOME_PATHS = (
     ".gemini/settings.json", ".gemini/GEMINI.md", ".gemini/bin", ".gemini/config",
     ".gemini/antigravity-cli/settings.json", ".gemini/antigravity-cli/mcp",
     ".gemini/antigravity-cli/skills", ".gemini/antigravity-cli/statusline.sh",
-    ".gemini/antigravity-cli/updater", ".gemini/antigravity-cli/bin",
+    ".gemini/antigravity-cli/updater", ".gemini/antigravity-cli/bin/webm_encoder",
     ".gemini/antigravity/mcp",
 )
 HIDDEN_HOST_DIRS = ("/mnt", "/run/WSL")
@@ -132,9 +132,39 @@ def keep_visible(links) -> list[str]:
     return argv
 
 
+# Writable home directories the CLIs expect to exist (Copilot unpacks itself
+# into ~/.cache); created before start, since a missing one cannot be bound.
+CREATE_HOME_DIRS = (".cache", ".local/state")
+
+# agy rewrites this shim at every start, so it must stay writable. A jailed
+# agent could replace it with code that runs when agy is next started
+# outside the launcher; the launcher refuses to start if it has changed.
+AGY_SHIM = ".gemini/antigravity-cli/bin/agentapi"
+
+
+def agy_shim_expected(home: Path) -> str:
+    return f'#!/bin/sh\nexec "{home}/.local/bin/agy" agentapi "$@"\n'
+
+
+def check_agy_shim(home: Path) -> None:
+    shim = home / AGY_SHIM
+    if shim.is_symlink():
+        raise LauncherError(f"refusing to start: {shim} is a symlink")
+    if shim.exists() and shim.read_text(errors="replace").strip() != \
+            agy_shim_expected(home).strip():
+        raise LauncherError(
+            f"refusing to start: {shim} has unexpected content, possibly planted "
+            "by an earlier agent session. Inspect it, delete it (agy recreates it), "
+            "and do not run agy outside the launcher until you have.")
+
+
 def build_argv(repo: Path, command: list[str], home: Path | None = None) -> list[str]:
     home = home or Path.home()
     masked = check_masked_dirs(repo)
+    check_agy_shim(home)
+    for d in CREATE_HOME_DIRS:
+        if not (home / d).is_symlink():
+            (home / d).mkdir(parents=True, exist_ok=True)
     argv = ["bwrap", "--die-with-parent",
             "--unshare-pid", "--unshare-ipc", "--unshare-cgroup-try",
             "--ro-bind", "/", "/",
