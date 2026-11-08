@@ -48,6 +48,16 @@ Branch: `feature/privacy-layer`.
 | 2026-11-08 | 8c47a9e–d3d0468 | e2e prompt as plain workflow; write check; canaries in `private/` | `e2e claude` PASS through the read-only launcher: read visible file, wrote draft, `private/` empty, no canary leaked |
 
 | 2026-11-08 | 1661302–9c1d88c | migrate; agent rules; pointer patch | gate PASS (98, incl. upstream CI on a patched clone, migrate→finalize round trip); local mutants (no escaped forms, no phone rule) FAIL |
+| 2026-11-08 | 3866705–b380b42 | launcher protects Codex/Copilot/agy config; agy shim check; `~/.cache`; GEMINI.md, AGENTS.override.md; finalize workspace scan | gate PASS (108); e2e: claude, codex, agy PASS; rules: claude PASS, agy and codex FAIL then PASS after the pointer files; copilot blocked on login |
+
+### Runtime matrix (one run each; LLM behaviour is not deterministic)
+
+| CLI | e2e | rules | Notes |
+|---|---|---|---|
+| Claude Code | PASS | PASS | reads `CLAUDE.md` → rules |
+| Codex | PASS | PASS | needs `AGENTS.override.md` (loads only one file per dir); helpers sit next to the resolved binary |
+| agy | PASS | PASS | needs `GEMINI.md`; rewrites `antigravity-cli/bin/agentapi` each start (launcher checks its content) |
+| Copilot | blocked | not run | login lives in the keyring (D-Bus) or `~/.config/gh`; neither is in the gate jail. Owner decision |
 
 ## Findings
 
@@ -63,12 +73,15 @@ Branch: `feature/privacy-layer`.
   space, and a long name wraps at its hyphen. Name checks compare without whitespace.
 - The template's full name appears only in `pdftitle`, so name checks accept metadata.
 - The provider's safeguards refused an adversarial e2e prompt; e2e now uses a workflow prompt.
+- Upstream's `check_framework_version.py` fails on any `AGENTS.md` change without a version
+  bump, so non-Claude pointers live in fork-owned `AGENTS.override.md` and `GEMINI.md`.
+- The launcher hides `private/` but not credentials: `~/.ssh`, `~/.config/gh` and other CLIs'
+  logins are readable (read-only) inside it. Not an identity leak, but worth masking per CLI.
 - `Edit(tools/**)` is an upstream ask rule, so fork code lives in `privacy/`.
 
 ## Next
 
-1. Owner applies `privacy/patches/0001-…` (the sandbox cannot write `.claude/commands/`).
-2. Behavioural e2e: does an agent following the rules write tokens, not real values,
-   when the user types a real value? Needs a new runner mode.
-3. e2e modes for codex, copilot, agy.
+1. Copilot login for the gate (owner decision), then `e2e`/`rules copilot`.
+2. Mask other credentials in the launcher (`~/.ssh`, `~/.config/gh`, other CLIs' auth).
+3. Repeat `rules` runs to estimate how reliably each CLI follows the rules.
 4. Custom `/add-template` templates in finalize (now refused).
