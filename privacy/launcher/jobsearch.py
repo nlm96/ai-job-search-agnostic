@@ -4,20 +4,27 @@
     jobsearch claude [args...]        # or codex, copilot, agy
     jobsearch -- COMMAND [args...]    # any command, e.g. for tests
 
-The agent runs in a bubblewrap namespace where the host filesystem looks
-normal except for these changes:
+The agent runs in a bubblewrap namespace where
 
-* ``private/``, ``cv/final/`` and ``cover_letters/final/`` in the repo are
-  replaced by empty tmpfs mounts (writes there vanish on exit);
-* ``/mnt`` (Windows drives) and ``/run/WSL`` (Windows interop sockets) are
-  hidden, and the interop variables and ``/mnt/...`` PATH entries removed;
-* ``/tmp`` is a fresh tmpfs, so temp files of the finaliser are invisible;
-* the agent gets its own PID namespace, so it cannot reach host processes'
-  view of the filesystem through ``/proc/<pid>/root``;
-* inherited file descriptors above stderr are closed.
+* ``private/`` (identity file, final PDFs, finalize's work dir) is replaced
+  by an empty tmpfs, so nothing in it is readable, and writes there vanish;
+* the whole host filesystem is READ-ONLY, except:
+  - the repo, so the agent can write drafts, profile files and state; but
+    the code and config that run later OUTSIDE the jail stay read-only:
+    ``privacy/`` (finalize), ``tools/``, ``.venv/``, ``.git/`` (hooks,
+    config), and the Claude permission files and agent definitions;
+  - the agent CLIs' own state directories, with their executable config
+    (settings, hooks, MCP and plugin definitions) kept read-only;
+  - a fresh ``/tmp``;
+  so a prompt-injected agent cannot plant code in your shell config,
+  ``~/.local/bin``, the venv or finalize that would run with your full
+  rights the next time you work outside the jail;
+* ``/mnt`` (Windows drives) and ``/run/WSL`` (interop sockets) are hidden,
+  and the interop variables and ``/mnt/...`` PATH entries removed;
+* the agent gets its own PID namespace, and inherited file descriptors
+  above stderr are closed.
 
-Network, the user's home and the rest of the repo stay as they are, because
-agent CLIs need their login state and the workspace.
+Network stays available, because agent CLIs need their model provider.
 """
 
 from __future__ import annotations
@@ -27,12 +34,31 @@ import shutil
 import sys
 from pathlib import Path
 
-MASKED_REPO_DIRS = ("private", "cv/final", "cover_letters/final")
+MASKED_REPO_DIRS = ("private",)
+# Code or config in the repo that runs, or decides what runs, outside the jail.
+READONLY_REPO_PATHS = (
+    "privacy", "tools", ".venv", ".git",
+    ".claude/settings.json", ".claude/settings.local.json",
+    ".claude/agents", ".claude/commands", ".claude/hooks",
+)
+# Agent CLI state that must stay writable for the CLIs to work.
+WRITABLE_HOME_PATHS = (
+    ".claude", ".claude.json", ".codex", ".copilot", ".gemini",
+    ".cache", ".local/state",
+)
+# Inside those: files that make the CLI run commands or load instructions.
+READONLY_HOME_PATHS = (
+    ".claude/settings.json", ".claude/CLAUDE.md", ".claude/hooks",
+    ".claude/skills", ".claude/agents", ".claude/commands",
+    ".claude/plugins", ".claude/output-styles",
+    ".codex/config.toml", ".codex/AGENTS.md",
+    ".copilot/config.json", ".copilot/mcp-config.json",
+    ".gemini/settings.json", ".gemini/GEMINI.md",
+)
 HIDDEN_HOST_DIRS = ("/mnt", "/run/WSL")
 DROPPED_ENV = ("WSL_INTEROP", "WSLENV")
 KNOWN_CLIS = ("claude", "codex", "copilot", "agy")
 JAIL_MARKER = "JOBSEARCH_JAIL"
-
 
 # On WSL /etc/resolv.conf links into /mnt/wsl/, which HIDDEN_HOST_DIRS hides;
 # without re-exposing the link target the agent has no DNS.
@@ -66,6 +92,13 @@ def check_masked_dirs(repo: Path) -> list[Path]:
     return out
 
 
+def existing(base: Path, rels) -> list[Path]:
+    """Paths under base that exist; symlinks are skipped (bwrap would follow
+    them and bind the target instead)."""
+    return [base / r for r in rels
+            if (base / r).exists() and not (base / r).is_symlink()]
+
+
 def clean_env(env: dict[str, str]) -> dict[str, str]:
     env = {k: v for k, v in env.items() if k not in DROPPED_ENV}
     if "PATH" in env:
@@ -87,25 +120,38 @@ def keep_visible(links) -> list[str]:
     return argv
 
 
-def build_argv(repo: Path, command: list[str]) -> list[str]:
+def build_argv(repo: Path, command: list[str], home: Path | None = None) -> list[str]:
+    home = home or Path.home()
+    masked = check_masked_dirs(repo)
     argv = ["bwrap", "--die-with-parent",
             "--unshare-pid", "--unshare-ipc", "--unshare-cgroup-try",
-            "--bind", "/", "/",
+            "--ro-bind", "/", "/",
             "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
     for d in HIDDEN_HOST_DIRS:
         if os.path.isdir(d):
             argv += ["--tmpfs", d]
     argv += keep_visible(KEEP_VISIBLE_LINKS)
-    for d in check_masked_dirs(repo):
+    for p in existing(home, WRITABLE_HOME_PATHS):
+        argv += ["--bind", str(p), str(p)]
+    for p in existing(home, READONLY_HOME_PATHS):
+        argv += ["--ro-bind", str(p), str(p)]
+    argv += ["--bind", str(repo), str(repo)]
+    for p in existing(repo, READONLY_REPO_PATHS):
+        argv += ["--ro-bind", str(p), str(p)]
+    for d in masked:
         argv += ["--tmpfs", str(d)]
     argv += ["--chdir", os.getcwd(), "--"] + command
     return argv
 
 
-def parse_args(args: list[str]) -> tuple[Path, list[str]]:
-    repo = default_repo()
-    if args[:1] == ["--repo"] and len(args) >= 2:
-        repo, args = Path(args[1]), args[2:]
+def parse_args(args: list[str]) -> tuple[Path, Path | None, list[str]]:
+    repo, home = default_repo(), None
+    while args[:1] in (["--repo"], ["--home"]) and len(args) >= 2:
+        if args[0] == "--repo":
+            repo = Path(args[1])
+        else:
+            home = Path(args[1]).resolve(strict=True)   # for tests
+        args = args[2:]
     if args[:1] == ["--"]:
         command = args[1:]
     elif args and args[0] in KNOWN_CLIS:
@@ -115,15 +161,15 @@ def parse_args(args: list[str]) -> tuple[Path, list[str]]:
                             + ",".join(KNOWN_CLIS) + "} [args] | -- COMMAND")
     if not command:
         raise LauncherError("no command given")
-    return repo.resolve(strict=True), command
+    return repo.resolve(strict=True), home, command
 
 
 def main(args: list[str]) -> int:
     try:
-        repo, command = parse_args(args)
+        repo, home, command = parse_args(args)
         if shutil.which("bwrap") is None:
             raise LauncherError("bubblewrap (bwrap) is not installed")
-        argv = build_argv(repo, command)
+        argv = build_argv(repo, command, home)
     except (LauncherError, FileNotFoundError) as e:
         print(f"jobsearch: {e}", file=sys.stderr)
         return 2
