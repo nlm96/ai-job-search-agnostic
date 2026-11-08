@@ -1,0 +1,43 @@
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -1,5 +1,7 @@
+ # Job Application Assistant for [YOUR_NAME]
+ 
++> **Privacy layer (fork):** first read and follow `privacy/AGENT-RULES.md`. Where it conflicts with this file, it wins.
++
+ <!-- SETUP: This file is populated by running /setup -->
+ <!-- After running /setup, all [PLACEHOLDER] tokens will be replaced with your actual information -->
+ 
+--- a/.claude/commands/apply.md
++++ b/.claude/commands/apply.md
+@@ -2,6 +2,8 @@
+ 
+ You are orchestrating a two-agent job application workflow. The job posting is provided below as `$ARGUMENTS` (either a URL or pasted text).
+ 
++> **Privacy layer (fork):** first read and follow `privacy/AGENT-RULES.md`. Where it conflicts with this file, it wins.
++
+ Follow these steps **exactly in order**. Do not skip steps.
+ 
+ **Standing rule — write new facts back to the profile.** If the user confirms, corrects or supplies a fact that is not already in `01-candidate-profile.md` — a metric, a project detail, a skill, a scope correction — update that file in the same turn. Do not leave it living only in the conversation or in a draft.
+--- a/.claude/commands/setup.md
++++ b/.claude/commands/setup.md
+@@ -2,6 +2,8 @@
+ 
+ You are running the onboarding setup for the AI Job Search framework. Your goal is to collect the user's professional information and populate all profile files so the `/apply` workflow works out of the box.
+ 
++> **Privacy layer (fork):** first read and follow `privacy/AGENT-RULES.md`. Where it conflicts with this file, it wins.
++
+ There are three paths into setup. Step 0 picks the right one; all three converge on Step 3 (file generation) and Step 4 (confirmation).
+ 
+ ---
+--- a/.claude/commands/reset.md
++++ b/.claude/commands/reset.md
+@@ -2,6 +2,8 @@
+ 
+ You are resetting parts of the job search framework back to a blank state so the user can start fresh with `/setup`.
+ 
++> **Privacy layer (fork):** first read and follow `privacy/AGENT-RULES.md`. Where it conflicts with this file, it wins.
++
+ **This command is destructive.** Nothing is deleted until the user explicitly confirms. Follow these steps exactly in order.
+ 
+ ---
