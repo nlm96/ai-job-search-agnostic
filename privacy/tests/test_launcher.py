@@ -41,7 +41,8 @@ SECRET_VALUES = tuple(SECRET.values())
 PROTECTED_REPO = ("privacy/finalize.py", "tools/verify_pdf.py", ".venv/bin/python",
                   ".git/hooks/pre-commit", ".git/config",
                   ".claude/settings.json", ".claude/settings.local.json",
-                  ".claude/agents/posting-fetcher.md")
+                  ".claude/agents/posting-fetcher.md",
+                  "AGENTS.override.md", "GEMINI.md")
 PROTECTED_HOME = (".zshrc", ".bashrc", ".local/bin/finalize-helper",
                   ".claude/settings.json", ".claude/hooks/x.sh",
                   ".codex/config.toml", ".codex/rules/default.rules",
@@ -115,7 +116,8 @@ class BuildArgv(unittest.TestCase):
 
     def test_protected_repo_paths_pinned(self):
         for rel in ("privacy", "tools", ".venv", ".git", ".claude/settings.json",
-                    ".claude/settings.local.json", ".claude/agents", ".claude/commands"):
+                    ".claude/settings.local.json", ".claude/agents", ".claude/commands",
+                    "AGENTS.override.md", "GEMINI.md"):
             self.assertIn(rel, jobsearch.READONLY_REPO_PATHS)
 
     def test_root_is_read_only(self):

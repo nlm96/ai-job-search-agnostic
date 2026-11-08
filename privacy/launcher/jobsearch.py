@@ -40,6 +40,8 @@ READONLY_REPO_PATHS = (
     "privacy", "tools", ".venv", ".git",
     ".claude/settings.json", ".claude/settings.local.json",
     ".claude/agents", ".claude/commands", ".claude/hooks",
+    # fork-owned instruction files that carry the privacy rules
+    "AGENTS.override.md", "GEMINI.md",
 )
 # Agent CLI state that must stay writable for the CLIs to work.
 WRITABLE_HOME_PATHS = (
