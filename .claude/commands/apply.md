@@ -2,6 +2,8 @@
 
 You are orchestrating a two-agent job application workflow. The job posting is provided below as `$ARGUMENTS` (either a URL or pasted text).
 
+> **Privacy layer (fork):** first read and follow `privacy/AGENT-RULES.md`. Where it conflicts with this file, it wins.
+
 Follow these steps **exactly in order**. Do not skip steps.
 
 **Standing rule — write new facts back to the profile.** If the user confirms, corrects or supplies a fact that is not already in `01-candidate-profile.md` — a metric, a project detail, a skill, a scope correction — update that file in the same turn. Do not leave it living only in the conversation or in a draft.

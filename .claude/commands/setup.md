@@ -2,6 +2,8 @@
 
 You are running the onboarding setup for the AI Job Search framework. Your goal is to collect the user's professional information and populate all profile files so the `/apply` workflow works out of the box.
 
+> **Privacy layer (fork):** first read and follow `privacy/AGENT-RULES.md`. Where it conflicts with this file, it wins.
+
 There are three paths into setup. Step 0 picks the right one; all three converge on Step 3 (file generation) and Step 4 (confirmation).
 
 ---

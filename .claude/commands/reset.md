@@ -2,6 +2,8 @@
 
 You are resetting parts of the job search framework back to a blank state so the user can start fresh with `/setup`.
 
+> **Privacy layer (fork):** first read and follow `privacy/AGENT-RULES.md`. Where it conflicts with this file, it wins.
+
 **This command is destructive.** Nothing is deleted until the user explicitly confirms. Follow these steps exactly in order.
 
 ---

@@ -1,5 +1,7 @@
 # Job Application Assistant for [YOUR_NAME]
 
+> **Privacy layer (fork):** first read and follow `privacy/AGENT-RULES.md`. Where it conflicts with this file, it wins.
+
 <!-- SETUP: This file is populated by running /setup -->
 <!-- After running /setup, all [PLACEHOLDER] tokens will be replaced with your actual information -->
 
