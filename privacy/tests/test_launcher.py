@@ -7,9 +7,13 @@ jobsearch-gates. Oracles:
 * read side: unique canaries planted under ``private/`` must never appear
   in anything the jailed process prints, while a canary in a visible draft
   must appear (proving the attacks actually run);
+* credentials: canaries in the usual credential stores under home (ssh,
+  gh, other CLIs' logins, shell history, other projects, caches) and in
+  secret-looking environment variables must not appear either, while the
+  started CLI's own state, its login variable and the toolchains must;
 * write side: every path whose content later runs outside the jail must
-  be unchanged after the attack, while writes to drafts and CLI state must
-  succeed (proving the jail is usable).
+  be unchanged after the attack, while writes to drafts and the started
+  CLI's state must succeed (proving the jail is usable).
 """
 
 from __future__ import annotations
@@ -35,7 +39,29 @@ SECRET = {
     "private/.work/1234/cv/main_acme_dev.tex": "CANARY-WORKTEX-44de",
 }
 VISIBLE = {"cv/main_acme_dev.tex": "CANARY-VISIBLE-0a0a"}
-SECRET_VALUES = tuple(SECRET.values())
+# Credentials under home that a jailed claude session must not see.
+SECRET_HOME = {
+    ".ssh/id_ed25519": "CANARY-SSHKEY-1c2d",
+    ".config/gh/hosts.yml": "CANARY-GHTOKEN-3e4f",
+    ".config/rclone/rclone.conf": "CANARY-RCLONE-5a6b",
+    ".git-credentials": "CANARY-GITCRED-7c8d",
+    ".zsh_history": "CANARY-HISTORY-9e0f",
+    ".codex/auth.json": "CANARY-CODEXAUTH-a1b2",
+    ".copilot/mcp-oauth-config/github.json": "CANARY-COPILOT-c3d4",
+    ".gemini/antigravity-cli/antigravity-oauth-token": "CANARY-AGYTOKEN-e5f6",
+    ".cache/huggingface/token": "CANARY-HFTOKEN-0718",
+    "career/other-project/.env": "CANARY-OTHERREPO-293a",
+}
+# What the claude session must still see (positive controls).
+VISIBLE_HOME = {
+    ".claude/.credentials.json": "CANARY-OWNLOGIN-4b5c",
+    ".local/bin/some-tool": "CANARY-TOOLCHAIN-6d7e",
+}
+SECRET_ENV = {"GH_TOKEN": "CANARY-ENVGH-8f90", "AWS_SECRET_ACCESS_KEY": "CANARY-ENVAWS-a1b3",
+              "OPENAI_API_KEY": "CANARY-ENVOPENAI-c2d4"}
+VISIBLE_ENV = {"ANTHROPIC_API_KEY": "CANARY-ENVOWN-e3f5"}
+SECRET_VALUES = (tuple(SECRET.values()) + tuple(SECRET_HOME.values())
+                 + tuple(SECRET_ENV.values()))
 
 # Paths whose content runs or is trusted outside the jail: must stay intact.
 PROTECTED_REPO = ("privacy/finalize.py", "tools/verify_pdf.py", ".venv/bin/python",
@@ -49,11 +75,15 @@ PROTECTED_HOME = (".zshrc", ".bashrc", ".local/bin/finalize-helper",
                   ".copilot/config.json", ".copilot/lsp-config.json",
                   ".copilot/statusline.sh", ".gemini/bin/agy",
                   ".gemini/antigravity-cli/settings.json")
-# Writes the agent must be able to make.
+# Writes the agent must be able to make, per CLI started.
 WRITABLE_REPO = ("cv/new_draft.tex", ".claude/skills/job-application-assistant/01.md")
-WRITABLE_HOME = (".claude/projects/session.jsonl", ".claude.json", ".cache/x",
-                 ".codex/sessions/s.jsonl", ".copilot/session-state/s",
-                 ".gemini/antigravity-cli/conversations/c")
+WRITABLE_HOME = {
+    "claude": (".claude/projects/session.jsonl", ".claude.json"),
+    "codex": (".codex/sessions/s.jsonl",),
+    "copilot": (".copilot/session-state/s",),
+    "agy": (".gemini/antigravity-cli/conversations/c",),
+}
+ALL_STATE_WRITES = tuple(r for rels in WRITABLE_HOME.values() for r in rels)
 
 
 def make_repo(base: Path) -> Path:
@@ -80,7 +110,10 @@ def make_home(base: Path) -> Path:
               ".gemini/antigravity-cli/conversations"):
         (home / d).mkdir(parents=True, exist_ok=True)
     (home / ".claude.json").write_text("{}\n")
-    (home / ".cache").mkdir()
+    for rel, content in {**SECRET_HOME, **VISIBLE_HOME}.items():
+        p = home / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content + "\n")
     return home
 
 
@@ -96,7 +129,7 @@ class BuildArgv(unittest.TestCase):
         self.base = Path(tempfile.mkdtemp())
         self.repo = make_repo(self.base)
         self.home = make_home(self.base)
-        self.argv = jobsearch.build_argv(self.repo, ["true"], self.home)
+        self.argv = jobsearch.build_argv(self.repo, ["true"], self.home, "claude")
 
     def tearDown(self):
         shutil.rmtree(self.base)
@@ -161,10 +194,43 @@ class BuildArgv(unittest.TestCase):
             jobsearch.build_argv(self.repo, ["true"], self.home)
 
     def test_symlinked_state_dir_not_bound(self):
-        shutil.rmtree(self.home / ".cache")
-        (self.home / ".cache").symlink_to(self.base)
+        shutil.rmtree(self.home / ".claude")
+        (self.home / ".claude").symlink_to(self.base)
+        argv = jobsearch.build_argv(self.repo, ["true"], self.home, "claude")
+        self.assertNotIn(str(self.home / ".claude"), argv)
+
+    def test_home_hidden_before_anything_is_bound_back(self):
+        hidden = self.pos("--tmpfs", self.home)
+        for i, a in enumerate(self.argv):
+            if a in ("--bind", "--ro-bind") and str(self.home) in self.argv[i + 2]:
+                self.assertGreater(i, hidden, self.argv[i + 1])
+
+    def test_only_the_started_cli_state_is_bound(self):
+        self.pos("--bind", self.home / ".claude")
+        for other in (".codex", ".copilot", ".gemini"):
+            self.assertFalse(any(a.startswith(str(self.home / other)) for a in self.argv),
+                             other)
+        argv = jobsearch.build_argv(self.repo, ["true"], self.home, "codex")
+        self.assertFalse(any(a.startswith(str(self.home / ".claude")) for a in argv))
+
+    def test_no_cli_binds_no_state(self):
         argv = jobsearch.build_argv(self.repo, ["true"], self.home)
-        self.assertNotIn(str(self.home / ".cache"), argv)
+        for state in jobsearch.CLI_STATE.values():
+            for rel in state:
+                self.assertNotIn(str(self.home / rel), argv)
+
+    def test_agent_sockets_hidden(self):
+        self.assertIn("/run/user", jobsearch.HIDDEN_HOST_DIRS)
+
+    def test_toolchain_has_no_credential_store(self):
+        for rel in jobsearch.HOME_TOOLCHAIN:
+            for bad in (".ssh", ".gnupg", ".config/gh", ".aws", ".cache"):
+                self.assertFalse(rel == bad or rel.startswith(bad + "/"), rel)
+
+    def test_cwd_outside_repo_in_home_falls_back_to_repo(self):
+        with mock.patch("os.getcwd", return_value=str(self.home / "career")):
+            argv = jobsearch.build_argv(self.repo, ["true"], self.home, "claude")
+        self.assertEqual(argv[argv.index("--chdir") + 1], str(self.repo))
 
 
 class AgyShim(unittest.TestCase):
@@ -202,15 +268,18 @@ class AgyShim(unittest.TestCase):
                          '#!/bin/sh\nexec "/home/u/.local/bin/agy" agentapi "$@"\n')
 
 
-class CreatesHomeDirs(unittest.TestCase):
-    def test_missing_cache_created_and_bound(self):
+class JailCache(unittest.TestCase):
+    def test_own_cache_per_cli_created_and_bound_as_cache(self):
         base = Path(tempfile.mkdtemp())
         try:
             repo, home = make_repo(base), make_home(base)
-            shutil.rmtree(home / ".cache")
-            argv = jobsearch.build_argv(repo, ["true"], home)
-            self.assertTrue((home / ".cache").is_dir())
-            self.assertIn(str(home / ".cache"), argv)
+            argv = jobsearch.build_argv(repo, ["true"], home, "copilot")
+            cache = home / jobsearch.JAIL_CACHE / "copilot"
+            self.assertTrue(cache.is_dir())
+            i = argv.index(str(cache))
+            self.assertEqual(argv[i - 1:i + 2], ["--bind", str(cache), str(home / ".cache")])
+            self.assertNotIn("--bind", [argv[j] for j in range(len(argv) - 2)
+                                        if argv[j + 1] == str(home / ".cache")])
         finally:
             shutil.rmtree(base)
 
@@ -243,11 +312,32 @@ class CleanEnv(unittest.TestCase):
         self.assertEqual(env["PATH"], "/usr/bin:/home/u/.local/bin")
         self.assertEqual(env[jobsearch.JAIL_MARKER], "1")
 
+    def test_drops_secrets_but_keeps_own_login(self):
+        env = jobsearch.clean_env({
+            "GH_TOKEN": "x", "AWS_SECRET_ACCESS_KEY": "x", "OPENAI_API_KEY": "x",
+            "SSH_AUTH_SOCK": "/run/user/1000/ssh", "DB_PASSWORD": "x",
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "a", "GIT_CONFIG_VALUE_0": "b",
+            "ANTHROPIC_API_KEY": "own", "LANG": "C.UTF-8", "TERM": "xterm"}, "claude")
+        self.assertEqual(set(env) - {jobsearch.JAIL_MARKER},
+                         {"ANTHROPIC_API_KEY", "LANG", "TERM"})
+
+    def test_own_login_is_per_cli(self):
+        env = jobsearch.clean_env({"OPENAI_API_KEY": "x", "ANTHROPIC_API_KEY": "x"}, "codex")
+        self.assertIn("OPENAI_API_KEY", env)
+        self.assertNotIn("ANTHROPIC_API_KEY", env)
+        self.assertNotIn("OPENAI_API_KEY", jobsearch.clean_env({"OPENAI_API_KEY": "x"}))
+
 
 class ParseArgs(unittest.TestCase):
     def test_known_cli(self):
-        repo, home, cmd = jobsearch.parse_args(["--repo", str(ROOT), "claude", "-c"])
-        self.assertEqual((repo, home, cmd), (ROOT, None, ["claude", "-c"]))
+        self.assertEqual(jobsearch.parse_args(["--repo", str(ROOT), "claude", "-c"]),
+                         (ROOT, None, "claude", ["claude", "-c"]))
+
+    def test_command_mode_has_no_cli_unless_given(self):
+        self.assertEqual(jobsearch.parse_args(["--", "bash"])[2], None)
+        self.assertEqual(jobsearch.parse_args(["--cli", "agy", "--", "bash"])[2], "agy")
+        with self.assertRaises(jobsearch.LauncherError):
+            jobsearch.parse_args(["--cli", "bash", "--", "bash"])
 
     def test_unknown_cli_rejected(self):
         with self.assertRaises(jobsearch.LauncherError):
@@ -259,11 +349,14 @@ class ParseArgs(unittest.TestCase):
 
 
 READ_ATTACKS = r"""
-R="$1"
+R="$1"; H="$2"
 echo "## plain read";      cat "$R"/private/* "$R"/private/*/* "$R"/private/*/*/* 2>&1
 echo "## recursive grep";  grep -r CANARY- "$R" 2>&1
 echo "## symlink";         ln -s "$R/private" /tmp/p && cat /tmp/p/identity.enc 2>&1
-echo "## proc root";       for p in /proc/[0-9]*; do cat "$p/root$R/private/identity.enc" 2>/dev/null; done
+echo "## proc root";       for p in /proc/[0-9]*; do cat "$p/root$R/private/identity.enc" 2>/dev/null; grep -rs CANARY- "$p/root$H" | head -20; done
+echo "## home grep";       grep -rs CANARY- "$H" 2>&1 | head -50
+echo "## env";             env | grep CANARY-
+echo "## run user";        ls -A /run/user 2>&1
 echo "## proc pids";       ls -d /proc/[0-9]* 2>&1 | wc -l
 echo "## nested unmount";  unshare -rm sh -c "umount '$R/private' 2>&1; umount -l '$R/private' 2>&1; cat '$R'/private/identity.enc 2>&1" 2>&1
 echo "## inherited fds";   for f in /proc/self/fd/*; do n=${f##*/}; [ "$n" -gt 2 ] && timeout 2 cat "$f" 2>/dev/null | head -c 200; done; echo
@@ -285,12 +378,13 @@ done
 """
 
 
-def run_launcher(repo: Path, home: Path, script: str, *args: str, pass_fds=()):
+def run_launcher(repo: Path, home: Path, script: str, *args: str, pass_fds=(),
+                 cli="claude", env=None):
     return subprocess.run(
-        [sys.executable, str(LAUNCHER), "--repo", str(repo), "--home", str(home), "--",
-         "bash", "-c", script, "attack", *args],
+        [sys.executable, str(LAUNCHER), "--repo", str(repo), "--home", str(home),
+         "--cli", cli, "--", "bash", "-c", script, "attack", *args],
         capture_output=True, text=True, timeout=120, pass_fds=pass_fds,
-        stdin=subprocess.DEVNULL, cwd=repo)
+        stdin=subprocess.DEVNULL, cwd=repo, env={**os.environ, **(env or {})})
 
 
 @unittest.skipUnless(IN_GATES, "needs user namespaces: runs inside jobsearch-gates")
@@ -303,7 +397,8 @@ class RedTeamRead(unittest.TestCase):
         # An fd to a secret, inheritable, as a careless parent might leak it.
         fd = os.open(cls.repo / "private" / "identity.enc", os.O_RDONLY)
         os.set_inheritable(fd, True)
-        r = run_launcher(cls.repo, cls.home, READ_ATTACKS, str(cls.repo), pass_fds=(fd,))
+        r = run_launcher(cls.repo, cls.home, READ_ATTACKS, str(cls.repo), str(cls.home),
+                         pass_fds=(fd,), env={**SECRET_ENV, **VISIBLE_ENV})
         os.close(fd)
         cls.out = r.stdout + r.stderr
 
@@ -320,6 +415,14 @@ class RedTeamRead(unittest.TestCase):
 
     def test_visible_canary_found(self):
         self.assertIn(VISIBLE["cv/main_acme_dev.tex"], self.out, self.out)
+
+    def test_own_state_toolchain_and_login_visible(self):
+        for value in (*VISIBLE_HOME.values(), *VISIBLE_ENV.values()):
+            self.assertIn(value, self.out, self.out)
+
+    def test_run_user_empty(self):
+        section = self.out.split("## run user")[1].split("##")[0]
+        self.assertNotIn("bus", section, section)
 
     def test_only_jail_processes_visible(self):
         section = self.out.split("## proc pids")[1].split("##")[0]
@@ -344,11 +447,15 @@ class RedTeamWrite(unittest.TestCase):
         cls.base = scratch_dir()
         cls.repo = make_repo(cls.base)
         cls.home = make_home(cls.base)
-        targets = ([f"repo:{r}" for r in PROTECTED_REPO + WRITABLE_REPO]
-                   + [f"home:{r}" for r in PROTECTED_HOME + WRITABLE_HOME])
-        r = run_launcher(cls.repo, cls.home, WRITE_ATTACKS,
-                         str(cls.repo), str(cls.home), *targets)
-        cls.out = r.stdout + r.stderr
+        cls.out = {}
+        for cli in jobsearch.KNOWN_CLIS:
+            others = tuple(r for r in ALL_STATE_WRITES if r not in WRITABLE_HOME[cli])
+            targets = ([f"repo:{r}" for r in PROTECTED_REPO + WRITABLE_REPO]
+                       + [f"home:{r}" for r in PROTECTED_HOME + ALL_STATE_WRITES]
+                       + [f"home:{r}.{cli}" for r in others])
+            r = run_launcher(cls.repo, cls.home, WRITE_ATTACKS,
+                             str(cls.repo), str(cls.home), *targets, cli=cli)
+            cls.out[cli] = r.stdout + r.stderr
 
     @classmethod
     def tearDownClass(cls):
@@ -361,16 +468,26 @@ class RedTeamWrite(unittest.TestCase):
                                  f"{rel} changed:\n{self.out}")
 
     def test_protected_dirs_not_moved(self):
+        for cli, out in self.out.items():
+            for d in ("privacy", "tools", ".venv", ".git"):
+                self.assertNotIn(f"MOVED repo:{d}", out, cli)
         for d in ("privacy", "tools", ".venv", ".git"):
-            self.assertNotIn(f"MOVED repo:{d}", self.out)
             self.assertTrue((self.repo / d).is_dir(), d)
 
+    def test_other_cli_state_not_writable(self):
+        for cli in jobsearch.KNOWN_CLIS:
+            for rel in ALL_STATE_WRITES:
+                if rel not in WRITABLE_HOME[cli]:
+                    self.assertFalse((self.home / f"{rel}.{cli}").exists(), f"{cli}: {rel}")
+
     def test_agent_can_still_work(self):
-        # Positive control: drafts, profile files and CLI state are writable.
-        for rel in WRITABLE_REPO:
-            self.assertIn(f"WROTE repo:{rel}", self.out, self.out)
-        for rel in WRITABLE_HOME:
-            self.assertIn(f"WROTE home:{rel}", self.out, self.out)
+        # Positive control: drafts, profile files and the CLI's state are writable.
+        for cli, out in self.out.items():
+            for rel in WRITABLE_REPO:
+                self.assertIn(f"WROTE repo:{rel}", out, f"{cli}:\n{out}")
+            for rel in WRITABLE_HOME[cli]:
+                self.assertIn(f"WROTE home:{rel}", out, f"{cli}:\n{out}")
+                self.assertEqual((self.home / rel).read_text(), "evil\n", f"{cli}: {rel}")
 
 
 if __name__ == "__main__":

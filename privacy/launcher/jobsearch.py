@@ -19,8 +19,15 @@ The agent runs in a bubblewrap namespace where
   so a prompt-injected agent cannot plant code in your shell config,
   ``~/.local/bin``, the venv or finalize that would run with your full
   rights the next time you work outside the jail;
-* ``/mnt`` (Windows drives) and ``/run/WSL`` (interop sockets) are hidden,
-  and the interop variables and ``/mnt/...`` PATH entries removed;
+* the home directory is replaced by an empty tmpfs. Only the toolchains
+  the agent needs (read-only), a cache of its own, and the state directory
+  of the ONE CLI being started are bound back in. Everything else, such as
+  ``~/.ssh``, ``~/.config/gh``, other CLIs' logins, shell history, other
+  projects and mounted drives, is invisible;
+* ``/mnt`` (Windows drives), ``/run/WSL`` (interop sockets) and
+  ``/run/user`` (ssh/gpg agent, D-Bus keyring) are hidden, and environment
+  variables that look like secrets are dropped, except the started CLI's
+  own login variables;
 * the agent gets its own PID namespace, and inherited file descriptors
   above stderr are closed.
 
@@ -30,6 +37,7 @@ Network stays available, because agent CLIs need their model provider.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -43,12 +51,29 @@ READONLY_REPO_PATHS = (
     # fork-owned instruction files that carry the privacy rules
     "AGENTS.override.md", "GEMINI.md",
 )
-# Agent CLI state that must stay writable for the CLIs to work.
-WRITABLE_HOME_PATHS = (
-    ".claude", ".claude.json", ".codex", ".copilot", ".gemini",
-    ".cache", ".local/state",
+# Per CLI: its state (bound read-write; holds its own login, which it needs)
+# and the environment variables that may carry its login.
+CLI_STATE = {
+    "claude": (".claude", ".claude.json"),
+    "codex": (".codex",),
+    "copilot": (".copilot",),
+    "agy": (".gemini",),
+}
+CLI_ENV = {
+    "claude": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"),
+    "codex": ("OPENAI_API_KEY", "CODEX_API_KEY"),
+    "copilot": ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
+    "agy": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+}
+# Toolchains under home, bound read-only. Nothing here may hold credentials.
+HOME_TOOLCHAIN = (
+    ".local/bin", ".local/share/claude", ".local/share/pnpm", ".local/share/uv",
+    ".nvm", ".agents", ".config/uv", ".texlive2025",
 )
-# Inside those: files that make the CLI run commands or load instructions.
+# The jail's own ~/.cache, one per CLI, so no host cache (which can hold
+# tokens, e.g. huggingface) is visible and CLIs cannot poison each other.
+JAIL_CACHE = ".cache/jobsearch-jail"
+# Inside the CLI state: files that make the CLI run commands or load instructions.
 READONLY_HOME_PATHS = (
     # Claude Code
     ".claude/settings.json", ".claude/CLAUDE.md", ".claude/hooks",
@@ -69,8 +94,14 @@ READONLY_HOME_PATHS = (
     ".gemini/antigravity-cli/updater", ".gemini/antigravity-cli/bin/webm_encoder",
     ".gemini/antigravity/mcp",
 )
-HIDDEN_HOST_DIRS = ("/mnt", "/run/WSL")
-DROPPED_ENV = ("WSL_INTEROP", "WSLENV")
+HIDDEN_HOST_DIRS = ("/mnt", "/run/WSL", "/run/user")
+DROPPED_ENV = ("WSL_INTEROP", "WSLENV", "SSH_AUTH_SOCK", "SSH_AGENT_PID",
+               "GPG_AGENT_INFO", "DBUS_SESSION_BUS_ADDRESS", "GNOME_KEYRING_CONTROL")
+# Names that look like they carry a secret. GIT_CONFIG_* is dropped as a
+# group, since its numbered KEY/VALUE pairs must stay consistent.
+SECRET_ENV_RE = re.compile(
+    r"TOKEN|SECRET|PASSW|API_?KEY|PRIVATE|CREDENTIAL|AUTH|COOKIE|SESSION|_KEY$|^GIT_CONFIG_",
+    re.IGNORECASE)
 KNOWN_CLIS = ("claude", "codex", "copilot", "agy")
 JAIL_MARKER = "JOBSEARCH_JAIL"
 
@@ -113,8 +144,10 @@ def existing(base: Path, rels) -> list[Path]:
             if (base / r).exists() and not (base / r).is_symlink()]
 
 
-def clean_env(env: dict[str, str]) -> dict[str, str]:
-    env = {k: v for k, v in env.items() if k not in DROPPED_ENV}
+def clean_env(env: dict[str, str], cli: str | None = None) -> dict[str, str]:
+    keep = CLI_ENV.get(cli, ())
+    env = {k: v for k, v in env.items()
+           if k not in DROPPED_ENV and (k in keep or not SECRET_ENV_RE.search(k))}
     if "PATH" in env:
         env["PATH"] = ":".join(p for p in env["PATH"].split(":")
                                if p and not p.startswith("/mnt/"))
@@ -133,10 +166,6 @@ def keep_visible(links) -> list[str]:
             argv += ["--ro-bind", target, target]
     return argv
 
-
-# Writable home directories the CLIs expect to exist (Copilot unpacks itself
-# into ~/.cache); created before start, since a missing one cannot be bound.
-CREATE_HOME_DIRS = (".cache", ".local/state")
 
 # agy rewrites this shim at every start, so it must stay writable. A jailed
 # agent could replace it with code that runs when agy is next started
@@ -160,13 +189,26 @@ def check_agy_shim(home: Path) -> None:
             "and do not run agy outside the launcher until you have.")
 
 
-def build_argv(repo: Path, command: list[str], home: Path | None = None) -> list[str]:
+def jail_cache(home: Path, cli: str) -> Path | None:
+    """The host directory bound as ~/.cache, created if missing."""
+    path = home
+    for part in Path(JAIL_CACHE, cli).parts:
+        path = path / part
+        if path.is_symlink():
+            return None
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def inside(path: Path, base: Path) -> bool:
+    return path == base or base in path.parents
+
+
+def build_argv(repo: Path, command: list[str], home: Path | None = None,
+               cli: str | None = None) -> list[str]:
     home = home or Path.home()
     masked = check_masked_dirs(repo)
     check_agy_shim(home)
-    for d in CREATE_HOME_DIRS:
-        if not (home / d).is_symlink():
-            (home / d).mkdir(parents=True, exist_ok=True)
     argv = ["bwrap", "--die-with-parent",
             "--unshare-pid", "--unshare-ipc", "--unshare-cgroup-try",
             "--ro-bind", "/", "/",
@@ -175,50 +217,68 @@ def build_argv(repo: Path, command: list[str], home: Path | None = None) -> list
         if os.path.isdir(d):
             argv += ["--tmpfs", d]
     argv += keep_visible(KEEP_VISIBLE_LINKS)
-    for p in existing(home, WRITABLE_HOME_PATHS):
-        argv += ["--bind", str(p), str(p)]
-    for p in existing(home, READONLY_HOME_PATHS):
+    argv += ["--tmpfs", str(home)]
+    for p in existing(home, HOME_TOOLCHAIN):
         argv += ["--ro-bind", str(p), str(p)]
+    if cli:
+        cache = jail_cache(home, cli)
+        if cache:
+            argv += ["--bind", str(cache), str(home / ".cache")]
+        state = CLI_STATE[cli]
+        for p in existing(home, state):
+            argv += ["--bind", str(p), str(p)]
+        own = [r for r in READONLY_HOME_PATHS
+               if any(r == s or r.startswith(s + "/") for s in state)]
+        for p in existing(home, own):
+            argv += ["--ro-bind", str(p), str(p)]
     argv += ["--bind", str(repo), str(repo)]
     for p in existing(repo, READONLY_REPO_PATHS):
         argv += ["--ro-bind", str(p), str(p)]
     for d in masked:
         argv += ["--tmpfs", str(d)]
-    argv += ["--chdir", os.getcwd(), "--"] + command
+    cwd = Path(os.getcwd())
+    if inside(cwd, home) and not inside(cwd, repo):
+        cwd = repo          # would not exist inside the jail
+    argv += ["--chdir", str(cwd), "--"] + command
     return argv
 
 
-def parse_args(args: list[str]) -> tuple[Path, Path | None, list[str]]:
-    repo, home = default_repo(), None
-    while args[:1] in (["--repo"], ["--home"]) and len(args) >= 2:
+def parse_args(args: list[str]) -> tuple[Path, Path | None, str | None, list[str]]:
+    repo, home, cli = default_repo(), None, None
+    while args[:1] in (["--repo"], ["--home"], ["--cli"]) and len(args) >= 2:
         if args[0] == "--repo":
             repo = Path(args[1])
-        else:
+        elif args[0] == "--home":
             home = Path(args[1]).resolve(strict=True)   # for tests
+        else:
+            cli = args[1]                                # whose state -- gets
         args = args[2:]
+    usage = ("usage: jobsearch [--repo DIR] {" + ",".join(KNOWN_CLIS)
+             + "} [args] | [--cli NAME] -- COMMAND")
     if args[:1] == ["--"]:
         command = args[1:]
     elif args and args[0] in KNOWN_CLIS:
-        command = args
+        command, cli = args, args[0]
     else:
-        raise LauncherError("usage: jobsearch [--repo DIR] {"
-                            + ",".join(KNOWN_CLIS) + "} [args] | -- COMMAND")
+        raise LauncherError(usage)
+    if cli is not None and cli not in KNOWN_CLIS:
+        raise LauncherError(usage)
     if not command:
         raise LauncherError("no command given")
-    return repo.resolve(strict=True), home, command
+    return repo.resolve(strict=True), home, cli, command
 
 
 def main(args: list[str]) -> int:
     try:
-        repo, home, command = parse_args(args)
+        repo, home, cli, command = parse_args(args)
         if shutil.which("bwrap") is None:
             raise LauncherError("bubblewrap (bwrap) is not installed")
-        argv = build_argv(repo, command, home)
+        argv = build_argv(repo, command, home, cli)
     except (LauncherError, FileNotFoundError) as e:
         print(f"jobsearch: {e}", file=sys.stderr)
         return 2
     os.closerange(3, os.sysconf("SC_OPEN_MAX"))
-    os.execvpe(argv[0], argv, clean_env(dict(os.environ)))
+    os.execvpe(argv[0], argv, clean_env(dict(os.environ), cli))
 
 
 if __name__ == "__main__":
