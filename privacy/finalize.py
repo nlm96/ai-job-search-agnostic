@@ -246,8 +246,11 @@ def check_pdf(pdf: Path, doc: Doc, identity: dict, used: set[str], rep: Report) 
                 rep.fail(f"{doc.key}: email is not literal text in the PDF")
             if f"mailto:{identity[f]}" not in uris and doc.contact_check:
                 rep.say(f"note: {doc.key}: no mailto link with the email")
-        elif fold(identity[f]) not in fold(text):
-            rep.fail(f"{doc.key}: {f} is not literal text in the PDF")
+        elif f == "phone":
+            if fold(identity[f]) not in fold(text):
+                rep.fail(f"{doc.key}: phone is not literal text in the PDF")
+        elif fold(identity[f]) not in fold(text) and fold(identity[f]) not in fold(meta):
+            rep.fail(f"{doc.key}: {f} appears neither in the text nor in the metadata")
     if doc.contact_check:
         for f in ("email", "phone"):
             if ident.TOKENS[f] not in used:

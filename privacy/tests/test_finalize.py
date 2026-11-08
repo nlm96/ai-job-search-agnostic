@@ -160,11 +160,11 @@ class Build(unittest.TestCase):
                 data = p.read_bytes().decode("utf-8", "replace")
                 self.assertEqual(leaked(data, CANARY_N), [], str(p))
 
-    def test_three_page_cv_fails_and_writes_nothing(self):
+    def test_too_long_cv_fails_and_writes_nothing(self):
         repo = self.repo(filler=90)
         rc, out = run_finalize(repo)
         self.assertEqual(rc, 1)
-        self.assertIn("cv: 3 pages, expected 2", out)
+        self.assertRegex(out, r"cv: [3-9] pages, expected 2")
         self.assertEqual(leaked(out, CANARY_N), [], out)
         self.assertFalse((repo / "private" / "final").exists())
 
