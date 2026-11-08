@@ -224,6 +224,7 @@ def pdf_facts(pdf: Path):
 
 def fold(s: str) -> str:
     s = s.replace("’", "'").replace(" ", " ")
+    s = re.sub(r"-\s+", "-", s)          # a line break after a hyphen
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
