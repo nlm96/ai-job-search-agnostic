@@ -46,11 +46,22 @@ class Rules(unittest.TestCase):
 
 
 class ForkOwnedPointers(unittest.TestCase):
-    def test_gemini_md_points_to_rules(self):
-        # AGENTS.md is guarded by upstream's framework_version check, so the
-        # pointer for Gemini-family agents lives in a fork-owned GEMINI.md.
-        self.assertIn(POINTER.replace("first read", "first read"),
-                      (ROOT / "GEMINI.md").read_text())
+    # AGENTS.md is guarded by upstream's framework_version check, so the
+    # instructions for Codex (AGENTS.override.md replaces AGENTS.md) and for
+    # Gemini-family agents (GEMINI.md) live in fork-owned files.
+    OWNED = ("AGENTS.override.md", "GEMINI.md")
+
+    def test_owned_files_point_to_rules_and_agents_md(self):
+        for name in self.OWNED:
+            text = (ROOT / name).read_text()
+            self.assertIn(POINTER, text, name)
+            self.assertIn("`AGENTS.md`", text, name)
+
+    def test_inline_token_list_matches_identity_store(self):
+        for name in self.OWNED:
+            text = (ROOT / name).read_text()
+            for token in ident.TOKENS.values():
+                self.assertIn(f"`{token}`", text, f"{name}: {token}")
 
     def test_agents_md_untouched(self):
         self.assertEqual(git("diff", "--quiet", "HEAD", "--", "AGENTS.md",
