@@ -108,10 +108,19 @@ class Guards(unittest.TestCase):
             fz.safe_mkdirs(self.repo, Path("private/final/acme_dev"))
 
 
+def scratch_dir() -> Path:
+    """A temp dir outside /tmp. The jail always replaces /tmp with an empty
+    tmpfs, so secrets planted under /tmp would be hidden even by a broken
+    jail, and the hostile-draft tests could not fail."""
+    root = Path(__file__).resolve().parent.parent.parent / ".gate-scratch"
+    root.mkdir(exist_ok=True)
+    return Path(tempfile.mkdtemp(dir=root))
+
+
 @unittest.skipUnless(IN_GATES, "compiles in a bwrap jail: runs inside jobsearch-gates")
 class Build(unittest.TestCase):
     def setUp(self):
-        self.base = Path(tempfile.mkdtemp())
+        self.base = scratch_dir()
 
     def tearDown(self):
         shutil.rmtree(self.base)
@@ -217,6 +226,7 @@ class Build(unittest.TestCase):
         script = (f"cat {secret} 2>&1; ls {Path.home()} 2>&1; "
                   f"echo x > {outside}/leak 2>&1; echo ok > {work}/inside; "
                   "cat /proc/net/route 2>&1 | wc -l")
+        self.assertFalse(str(self.base).startswith("/tmp/"))
         r = fz.run_jailed(fz.jail_argv(work, work, ["/bin/sh", "-c", script]))
         self.assertNotIn("OUTSIDESECRET42", r.stdout + r.stderr)
         self.assertFalse((outside / "leak").exists())
