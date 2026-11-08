@@ -359,6 +359,25 @@ def install(repo: Path, co_role: str, outputs: dict[str, bytes], rep: Report,
     rep.say(f"linked documents/applications/{co_role}/final -> private/final/{co_role}")
 
 
+def scan_workspace(repo: Path, identity: dict, rep: Report) -> None:
+    """Backstop for agents that ignore the rules: report workspace files that
+    contain a real value. Names files and counts only."""
+    from privacy import migrate   # imported here: migrate imports this module
+    rules = migrate.build_rules(identity)
+    hits = []
+    for path in migrate.target_files(repo):
+        try:
+            _, n = migrate.migrate_text(path.read_text(encoding="utf-8"), rules)
+        except UnicodeDecodeError:
+            continue
+        if n:
+            hits.append(f"{path.relative_to(repo).as_posix()} ({n})")
+    if hits:
+        rep.say("warning: real contact details found in " + ", ".join(hits)
+                + ". An agent may have written them. Run privacy/bin/migrate to "
+                "review, then privacy/bin/migrate --apply.")
+
+
 def read_passphrase(from_stdin: bool) -> str:
     if from_stdin:
         return sys.stdin.readline().rstrip("\n")
@@ -404,6 +423,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     rep = Report(identity)
+    scan_workspace(repo, identity, rep)
     try:
         outputs = build(repo, args.co_role, identity, rep)
         if not rep.failed and outputs:

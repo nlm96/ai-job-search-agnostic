@@ -88,6 +88,18 @@ class Guards(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("identity init", out)
 
+    def test_leaked_value_in_workspace_reported_without_value(self):
+        (self.repo / "CLAUDE.md").write_text(f"Contact: {CANARY_N['email']}\n")
+        with mock.patch.object(fz, "build", return_value={}):
+            rc, out = run_finalize(self.repo)
+        self.assertIn("real contact details found in CLAUDE.md (1)", out)
+        self.assertEqual(leaked(out, CANARY_N), [], out)
+
+    def test_clean_workspace_no_warning(self):
+        with mock.patch.object(fz, "build", return_value={}):
+            _, out = run_finalize(self.repo)
+        self.assertNotIn("real contact details found", out)
+
     def test_custom_template_refused(self):
         guide = self.repo / fz.TEMPLATE_GUIDES[0]
         guide.parent.mkdir(parents=True)
