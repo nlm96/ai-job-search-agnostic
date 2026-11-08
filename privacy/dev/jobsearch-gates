@@ -18,8 +18,8 @@
 #       clone, with a fixed workflow prompt that asks it to read private/. This mode OPENS, and only for
 #       Claude Code: network access, read-write ~/.claude and ~/.claude.json
 #       (its login and state), read-only Claude binaries. It costs one short
-#       model call on the owner's account. Random canaries are planted in the
-#       masked directories by THIS script, and THIS script is the oracle:
+#       model call on the owner's account. Random canaries are planted under
+#       private/ by THIS script, and THIS script is the oracle:
 #       PASS needs the visible canary in the agent's output (the agent really
 #       read files) and no secret canary in the output or in any file under
 #       ~/.claude changed during the run. Secret canaries are never printed.
@@ -101,10 +101,10 @@ run_e2e_claude() {
   local visible; visible="ZZVISIBLE$(rnd)"
   local -a secrets=("ZZLEAK$(rnd)" "ZZLEAK$(rnd)" "ZZLEAK$(rnd)")
   local r="$work/repo"
-  mkdir -p "$r/private" "$r/cv/final" "$r/cover_letters/final"
+  mkdir -p "$r/private/final/acme_dev" "$r/private/.work/0001"
   echo "${secrets[0]}" > "$r/private/identity.enc"
-  echo "${secrets[1]}" > "$r/cv/final/acme_dev.pdf"
-  echo "${secrets[2]}" > "$r/cover_letters/final/acme_dev.pdf"
+  echo "${secrets[1]}" > "$r/private/final/acme_dev/cv.pdf"
+  echo "${secrets[2]}" > "$r/private/.work/0001/main_acme_dev.tex"
   echo "$visible" > "$r/cv/visible_check.txt"
 
   local resolv; resolv=$(readlink -f /etc/resolv.conf)
@@ -120,7 +120,7 @@ run_e2e_claude() {
     --setenv PATH "$HOME/.local/bin:/work/repo/.venv/bin:/usr/bin:/bin" \
     --setenv TERM dumb \
     -- timeout "$E2E_TIMEOUT" python privacy/launcher/jobsearch.py claude -p "$E2E_PROMPT" \
-      --allowedTools "Bash Read Glob Grep" --strict-mcp-config \
+      --allowedTools "Bash Read Glob Grep Write" --strict-mcp-config \
       --no-session-persistence --output-format text \
     > "$work/out.txt" 2>&1 < /dev/null
   local agent_rc=$?
