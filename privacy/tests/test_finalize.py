@@ -190,23 +190,37 @@ class Build(unittest.TestCase):
         repo = self.repo()
         secret = self.base / "outside_secret.txt"
         secret.write_text("OUTSIDESECRET42\n")
+        # Both attempts fail silently when jailed, so the build must still
+        # PASS: that is the positive control that TeX really ran them.
         hostile = (
             "\\section{More}\n"
             f"\\IfFileExists{{{secret}}}{{\\input{{{secret}}}}}{{}}\n"
-            "\\newwrite\\leak\\immediate\\openout\\leak="
-            f"{repo}/cv/leak_tex.txt\n"
-            "\\immediate\\write\\leak{ZZEMAILZZ}\\immediate\\closeout\\leak\n"
             "\\directlua{pcall(function() local f = io.open('"
             f"{repo}/cv/leak_lua.txt', 'w') f:write('x') f:close() end)}}\n")
         p = repo / "cv" / f"main_{CO_ROLE}.tex"
         p.write_text(p.read_text().replace("\\section{More}", hostile))
         rc, out = run_finalize(repo)
-        self.assertFalse((repo / "cv" / "leak_tex.txt").exists())
+        self.assertEqual(rc, 0, out)
         self.assertFalse((repo / "cv" / "leak_lua.txt").exists())
         self.assertNotIn("OUTSIDESECRET42", out)
         cv = repo / "private" / "final" / CO_ROLE / "cv.pdf"
-        if cv.exists():
-            self.assertNotIn("OUTSIDESECRET42", fz.pdf_facts(cv)[1])
+        self.assertNotIn("OUTSIDESECRET42", fz.pdf_facts(cv)[1])
+
+    def test_jail_hides_host_and_allows_only_work(self):
+        work = self.base / "work"
+        work.mkdir()
+        (work / "home").mkdir()
+        secret = self.base / "outside_secret.txt"
+        secret.write_text("OUTSIDESECRET42\n")
+        outside = self.base / "outside_dir"
+        outside.mkdir()
+        script = (f"cat {secret} 2>&1; ls {Path.home()} 2>&1; "
+                  f"echo x > {outside}/leak 2>&1; echo ok > {work}/inside; "
+                  "cat /proc/net/route 2>&1 | wc -l")
+        r = fz.run_jailed(fz.jail_argv(work, work, ["/bin/sh", "-c", script]))
+        self.assertNotIn("OUTSIDESECRET42", r.stdout + r.stderr)
+        self.assertFalse((outside / "leak").exists())
+        self.assertEqual((work / "inside").read_text(), "ok\n")   # positive control
 
     def test_planted_link_is_not_followed(self):
         repo = self.repo()
