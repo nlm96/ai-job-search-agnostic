@@ -20,6 +20,9 @@ Branch: `feature/privacy-layer`.
 | `privacy/texsubst.py` | token → escaped value; `\href`/`\url` targets get URL escaping |
 | `privacy/finalize.py`, `privacy/bin/finalize` | build real PDFs in a no-network, no-home bwrap jail; checks; redacted output |
 | `privacy/launcher/jobsearch.py` | agent jail: `/` read-only, repo writable except code/config that runs outside, CLI state writable except executable config, `private/` masked |
+| `privacy/migrate.py`, `privacy/bin/migrate` | real values → tokens in workspace files (dry run by default; never `documents/`) |
+| `privacy/AGENT-RULES.md` | all agent-facing rules; read-only in the launcher |
+| `privacy/patches/0001-…` | one pointer line each in `CLAUDE.md`, `apply.md`, `setup.md`, `reset.md` |
 | `privacy/dev/jobsearch-gates` | owner-installed gate runner (`test`, `e2e claude`) |
 
 ## How testing works
@@ -44,6 +47,8 @@ Branch: `feature/privacy-layer`.
 | 2026-11-08 | 40a53bd | read-only-by-default launcher, `private/` only mask | gate PASS (81); mutant (writable root) FAIL |
 | 2026-11-08 | 8c47a9e–d3d0468 | e2e prompt as plain workflow; write check; canaries in `private/` | `e2e claude` PASS through the read-only launcher: read visible file, wrote draft, `private/` empty, no canary leaked |
 
+| 2026-11-08 | 1661302–9c1d88c | migrate; agent rules; pointer patch | gate PASS (98, incl. upstream CI on a patched clone, migrate→finalize round trip); local mutants (no escaped forms, no phone rule) FAIL |
+
 ## Findings
 
 - WSL `/etc/resolv.conf` → `/mnt/wsl/resolv.conf`; hiding `/mnt` breaks DNS unless re-bound.
@@ -62,7 +67,8 @@ Branch: `feature/privacy-layer`.
 
 ## Next
 
-1. Migration: replace real values with tokens in profile files after `/setup`, run outside agents.
-2. Patches for `apply.md` (5d, 6), `setup.md` (tokens), `reset.md`; AGENTS.md pointer.
+1. Owner applies `privacy/patches/0001-…` (the sandbox cannot write `.claude/commands/`).
+2. Behavioural e2e: does an agent following the rules write tokens, not real values,
+   when the user types a real value? Needs a new runner mode.
 3. e2e modes for codex, copilot, agy.
 4. Custom `/add-template` templates in finalize (now refused).
