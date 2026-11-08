@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs privacy/migrate.py with the repo's own venv in isolated mode.
+here=$(cd "$(dirname "$0")/../.." && pwd -P)
+exec "$here/.venv/bin/python" -I "$here/privacy/migrate.py" "$@"
