@@ -48,12 +48,24 @@ WRITABLE_HOME_PATHS = (
 )
 # Inside those: files that make the CLI run commands or load instructions.
 READONLY_HOME_PATHS = (
+    # Claude Code
     ".claude/settings.json", ".claude/CLAUDE.md", ".claude/hooks",
     ".claude/skills", ".claude/agents", ".claude/commands",
     ".claude/plugins", ".claude/output-styles",
-    ".codex/config.toml", ".codex/AGENTS.md",
-    ".copilot/config.json", ".copilot/mcp-config.json",
-    ".gemini/settings.json", ".gemini/GEMINI.md",
+    # Codex: config (hooks, MCP, notify), exec-policy rules, its own binary
+    ".codex/config.toml", ".codex/AGENTS.md", ".codex/rules",
+    ".codex/skills", ".codex/plugins", ".codex/packages",
+    # Copilot CLI: trusted folders, MCP/LSP servers, hooks, status line
+    ".copilot/config.json", ".copilot/settings.json", ".copilot/mcp-config.json",
+    ".copilot/lsp-config.json", ".copilot/hooks", ".copilot/skills",
+    ".copilot/installed-plugins", ".copilot/copilot-instructions.md",
+    ".copilot/statusline.sh",
+    # Antigravity CLI (agy): settings, MCP, plugins, skills, its own binary
+    ".gemini/settings.json", ".gemini/GEMINI.md", ".gemini/bin", ".gemini/config",
+    ".gemini/antigravity-cli/settings.json", ".gemini/antigravity-cli/mcp",
+    ".gemini/antigravity-cli/skills", ".gemini/antigravity-cli/statusline.sh",
+    ".gemini/antigravity-cli/updater", ".gemini/antigravity-cli/bin",
+    ".gemini/antigravity/mcp",
 )
 HIDDEN_HOST_DIRS = ("/mnt", "/run/WSL")
 DROPPED_ENV = ("WSL_INTEROP", "WSLENV")

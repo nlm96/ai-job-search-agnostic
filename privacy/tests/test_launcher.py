@@ -44,10 +44,15 @@ PROTECTED_REPO = ("privacy/finalize.py", "tools/verify_pdf.py", ".venv/bin/pytho
                   ".claude/agents/posting-fetcher.md")
 PROTECTED_HOME = (".zshrc", ".bashrc", ".local/bin/finalize-helper",
                   ".claude/settings.json", ".claude/hooks/x.sh",
-                  ".codex/config.toml", ".gemini/settings.json")
+                  ".codex/config.toml", ".codex/rules/default.rules",
+                  ".copilot/config.json", ".copilot/lsp-config.json",
+                  ".copilot/statusline.sh", ".gemini/bin/agy",
+                  ".gemini/antigravity-cli/settings.json")
 # Writes the agent must be able to make.
 WRITABLE_REPO = ("cv/new_draft.tex", ".claude/skills/job-application-assistant/01.md")
-WRITABLE_HOME = (".claude/projects/session.jsonl", ".claude.json", ".cache/x")
+WRITABLE_HOME = (".claude/projects/session.jsonl", ".claude.json", ".cache/x",
+                 ".codex/sessions/s.jsonl", ".copilot/session-state/s",
+                 ".gemini/antigravity-cli/conversations/c")
 
 
 def make_repo(base: Path) -> Path:
@@ -70,7 +75,9 @@ def make_home(base: Path) -> Path:
         p = home / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("original\n")
-    (home / ".claude/projects").mkdir(parents=True)
+    for d in (".claude/projects", ".codex/sessions", ".copilot/session-state",
+              ".gemini/antigravity-cli/conversations"):
+        (home / d).mkdir(parents=True, exist_ok=True)
     (home / ".claude.json").write_text("{}\n")
     (home / ".cache").mkdir()
     return home
