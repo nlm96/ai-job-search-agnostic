@@ -189,10 +189,12 @@ class Build(unittest.TestCase):
         repo = self.repo()
         p = repo / "cv" / f"main_{CO_ROLE}.tex"
         p.write_text(p.read_text().replace(
-            "\\section{More}", "\\section{More}\\undefinedmacro{ZZEMAILZZ ZZNAMEZZ}"))
+            "\\section{More}", "\\section{More}\\input{ZZFIRSTNAMEZZ-ZZPHONEZZ}"))
         rc, out = run_finalize(repo)
         self.assertEqual(rc, 1)
         self.assertIn("lualatex failed", out)
+        # The TeX error line names the missing file, i.e. the real values:
+        self.assertIn("ZZFIRSTNAMEZZ", out)
         self.assertEqual(leaked(out, CANARY_N), [], out)
 
     def test_hostile_draft_cannot_read_or_write_outside(self):
