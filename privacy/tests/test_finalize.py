@@ -129,7 +129,7 @@ class Build(unittest.TestCase):
             self.assertEqual(n, pages)
             self.assertEqual(ident.TOKEN_RE.findall(text + meta + " ".join(uris)), [])
             self.assertIn(fz.fold(identity["email"]), fz.fold(text))
-            self.assertIn(fz.fold(identity["full_name"]), fz.fold(text))
+            self.assertIn(fz.compact(identity["full_name"]), fz.compact(text))
             self.assertIn(f"mailto:{identity['email']}", uris)
             self.assertIn(identity["linkedin"], uris)
         _, cv_text, meta, uris = fz.pdf_facts(final / "cv.pdf")

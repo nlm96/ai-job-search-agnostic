@@ -228,6 +228,12 @@ def fold(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
+def compact(s: str) -> str:
+    """fold() without any whitespace: moderncv sets first and last name in
+    separate boxes, and pypdf sometimes extracts them with no space."""
+    return re.sub(r"\s+", "", fold(s))
+
+
 def check_pdf(pdf: Path, doc: Doc, identity: dict, used: set[str], rep: Report) -> None:
     pages, text, meta, uris = pdf_facts(pdf)
     if pages != doc.pages:
@@ -250,7 +256,7 @@ def check_pdf(pdf: Path, doc: Doc, identity: dict, used: set[str], rep: Report) 
         elif f == "phone":
             if fold(identity[f]) not in fold(text):
                 rep.fail(f"{doc.key}: phone is not literal text in the PDF")
-        elif fold(identity[f]) not in fold(text) and fold(identity[f]) not in fold(meta):
+        elif compact(identity[f]) not in compact(text) + compact(meta):
             rep.fail(f"{doc.key}: {f} appears neither in the text nor in the metadata")
     if doc.contact_check:
         for f in ("email", "phone"):
