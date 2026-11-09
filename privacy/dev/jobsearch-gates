@@ -373,6 +373,8 @@ for n, arg, res in calls:
 sys.exit(rc)
 PY
   echo "agent exit code: $agent_rc"
+  echo "-- agent output, last 4000 bytes (canary redacted)"
+  sed "s/$secret/[CANARY]/g" "$work/out.txt" | tail -c 4000
   return $rc
 }
 
