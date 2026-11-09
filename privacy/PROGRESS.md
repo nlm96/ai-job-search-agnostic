@@ -23,7 +23,7 @@ Branch: `feature/privacy-layer`.
 | `privacy/migrate.py`, `privacy/bin/migrate` | real values → tokens in workspace files (dry run by default; never `documents/`) |
 | `privacy/AGENT-RULES.md` | all agent-facing rules; read-only in the launcher |
 | `privacy/patches/0001-…` | one pointer line each in `CLAUDE.md`, `apply.md`, `setup.md`, `reset.md` |
-| `privacy/dev/jobsearch-gates` | owner-installed gate runner (`test`, `e2e`/`rules` CLI, `creds claude\|codex`) |
+| `privacy/dev/jobsearch-gates` | owner-installed gate runner (`test`, `e2e`/`rules` CLI, `creds claude\|codex\|agy`) |
 
 ## How testing works
 
@@ -48,6 +48,7 @@ Branch: `feature/privacy-layer`.
 | 2026-11-08 | 8c47a9e–d3d0468 | e2e prompt as plain workflow; write check; canaries in `private/` | `e2e claude` PASS through the read-only launcher: read visible file, wrote draft, `private/` empty, no canary leaked |
 
 | 2026-11-08 | 1661302–9c1d88c | migrate; agent rules; pointer patch | gate PASS (98, incl. upstream CI on a patched clone, migrate→finalize round trip); local mutants (no escaped forms, no phone rule) FAIL |
+| 2026-11-09 | 7a2260b–55bcd7a | `creds agy`; creds script reads before it writes (agy's shell sandbox makes the workspace read-only) | `creds agy` PASS with the owner's settings and also with `--dangerously-skip-permissions`: `read_file` deny rule, and `cat`/Python get Permission denied; `creds codex` PASS again |
 | 2026-11-09 | 263f1e5–eeadb6d | gate `creds`: the CLI's own layer hides its login files from its agent inside the launcher; Codex runs under the owner's `dev` profile (`--sandbox` replaced it) | `creds claude` and `creds codex` PASS: canary denied to Read (Claude) and to `cat` and Python in a script (OS sandbox), normal file copied; owner config checked; `e2e`/`rules codex` PASS under the profile |
 | 2026-11-09 | e3c3884–317758b | credential masking: home allowlist, `/run/user` hidden, secret env filter, TeX cache in jail cache | gate PASS (123, incl. lualatex inside the launcher); mutants (no home mask, no env filter) FAIL; e2e and rules PASS for claude, codex, agy |
 | 2026-11-08 | 3866705–b380b42 | launcher protects Codex/Copilot/agy config; agy shim check; `~/.cache`; GEMINI.md, AGENTS.override.md; finalize workspace scan | gate PASS (108); e2e: claude, codex, agy PASS; rules: claude PASS, agy and codex FAIL then PASS after the pointer files; copilot blocked on login |
@@ -84,9 +85,9 @@ Branch: `feature/privacy-layer`.
 - The started CLI's own login is visible inside the launcher (the CLI needs it). Its agent is
   kept from it by the CLI's own layer, configured by the owner: Claude Code (Read deny rules
   + sandbox with `failIfUnavailable`, no unsandboxed fallback) and Codex (`dev` profile with
-  deny-read rules) are verified by `creds`. agy has `read_file` deny rules and a terminal
-  sandbox, not yet verified; the gate starts it with `--dangerously-skip-permissions`, which
-  probably disables them. Copilot: not examined.
+  deny-read rules) and agy (`read_file` deny rules + terminal sandbox) are verified by
+  `creds`. For agy, `--dangerously-skip-permissions` disables neither (verified), so the
+  e2e/rules gates keep it. Copilot: not examined.
 - The auto-mode classifier also refused the credential script for Claude; `creds claude`
   uses `dontAsk` so the sandbox is tested on its own.
 - `codex exec --sandbox …` replaces the owner's `default_permissions` profile and drops its
@@ -97,8 +98,8 @@ Branch: `feature/privacy-layer`.
 
 ## Next
 
-1. agy: verify its deny rules and terminal sandbox inside the launcher (`creds agy`), and
-   find out whether `--dangerously-skip-permissions` disables them.
-1. Copilot login for the gate (deferred by the owner).
+1. Copilot login for the gate (deferred by the owner); then `creds copilot`.
+1. The `creds` config checks pin only each CLI's own login file. A deny list that drops
+   another credential path would not fail them (the launcher hides those anyway).
 2. Repeat `rules` runs to estimate how reliably each CLI follows the rules.
 3. Custom `/add-template` templates in finalize (now refused).
