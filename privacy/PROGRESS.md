@@ -2,7 +2,7 @@
 
 How to work on the layer: `DEVELOPING.md`. User guide: `README.md`.
 Design: `docs/fork/diagrams/30`–`33` and `docs/fork/claude-review/03` (untracked drafts).
-Branch: `feature/privacy-layer` (not pushed as of 2026-11-10).
+Branch: `feature/privacy-layer`, pushed to `origin` (the fork) on 2026-11-10; no PR yet.
 
 ## Decisions (owner, 2026-11-08)
 
@@ -100,13 +100,16 @@ Branch: `feature/privacy-layer` (not pushed as of 2026-11-10).
 ## Next
 
 Status 2026-11-10: the layer is built and gate-tested with synthetic data for Claude Code,
-Codex and agy. User guide and developer guide are written. Nothing is pushed.
+Codex and agy. User guide and developer guide are written. The branch is pushed, after a
+scan of all outgoing commits for private data and a history rewrite that removed the
+owner's absolute home path. There is no PR yet.
 
-1. Review the whole branch before the first push (`git diff master...HEAD`): a security
-   review, and a scan of every outgoing commit for private data (the owner's name, email
-   and phone must not appear; `privacy/dev/jobsearch-gates` contains the owner's home path;
-   ask whether that is fine to publish).
-2. Push `feature/privacy-layer` and open a PR to the fork's `master` (owner approval).
+1. Review the whole branch before the PR (`git diff master...HEAD`): a security
+   review, and a scan of every outgoing commit for private data (the owner's name, email,
+   phone and absolute paths must not appear; use `~` or `$HOME`, as the owner asked).
+   Fixes are new commits: the branch is already pushed, so do not rewrite its history.
+2. Open a PR to the fork's own `master` (owner approval), with
+   `gh pr create --repo nlm96/ai-job-search-agnostic --base master`, never upstream.
 3. The owner's acceptance run, which only the owner can do: `identity init` with the real
    details, the launcher, `/setup`, `/apply` on a real posting, then `finalize`. Fix what
    it turns up from finalize's redacted output.
