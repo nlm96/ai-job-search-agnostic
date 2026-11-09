@@ -121,3 +121,7 @@ company_research/*.json
 
 # Brainstorm mockups (superpowers visual companion) - never ship
 .superpowers/
+
+# Privacy layer (fork): identity, final PDFs and finalize work files; gate test scratch
+/private/
+/.gate-scratch/

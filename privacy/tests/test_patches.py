@@ -68,6 +68,19 @@ class ForkOwnedPointers(unittest.TestCase):
                              check=False).returncode, 0)
 
 
+class GitIgnore(unittest.TestCase):
+    # Everything under private/ is identifying (the identity file, filled-in
+    # .tex work files, final PDFs) and must never be committed or pushed.
+    PATHS = ("private/identity.enc", "private/.work/0001/main_acme_dev.tex",
+             "private/final/acme_dev/cv.pdf", "private/final/acme_dev/notes.txt",
+             ".gate-scratch/tmp1/repo/x")
+
+    def test_private_paths_ignored(self):
+        for rel in self.PATHS:
+            r = git("check-ignore", "-q", "--no-index", rel, check=False)
+            self.assertEqual(r.returncode, 0, f"{rel} is not git-ignored")
+
+
 class Patch(unittest.TestCase):
     def test_patches_touch_only_the_pointer(self):
         text = "".join(p.read_text() for p in PATCHES)
