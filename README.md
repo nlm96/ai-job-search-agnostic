@@ -20,6 +20,8 @@
   write cover letters, and prepare you for interviews.
 </p>
 
+> **Privacy layer (this fork):** agents work with placeholder tokens instead of your name and contact details, and start through a sandboxing launcher. Read [privacy/README.md](privacy/README.md) before first use.
+
 <p align="center">
   <a href="#quick-start"><b>Quick start</b></a>
   &nbsp;&nbsp;&nbsp;

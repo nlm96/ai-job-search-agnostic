@@ -1,7 +1,8 @@
 # Privacy layer: progress log
 
+How to work on the layer: `DEVELOPING.md`. User guide: `README.md`.
 Design: `docs/fork/diagrams/30`–`33` and `docs/fork/claude-review/03` (untracked drafts).
-Branch: `feature/privacy-layer`.
+Branch: `feature/privacy-layer` (not pushed as of 2026-11-10).
 
 ## Decisions (owner, 2026-11-08)
 
@@ -98,8 +99,24 @@ Branch: `feature/privacy-layer`.
 
 ## Next
 
-1. Copilot login for the gate (deferred by the owner); then `creds copilot`.
-1. The `creds` config checks pin only each CLI's own login file. A deny list that drops
-   another credential path would not fail them (the launcher hides those anyway).
-2. Repeat `rules` runs to estimate how reliably each CLI follows the rules.
-3. Custom `/add-template` templates in finalize (now refused).
+Status 2026-11-10: the layer is built and gate-tested with synthetic data for Claude Code,
+Codex and agy. User guide and developer guide are written. Nothing is pushed.
+
+1. Review the whole branch before the first push (`git diff master...HEAD`): a security
+   review, and a scan of every outgoing commit for private data (the owner's name, email
+   and phone must not appear; `privacy/dev/jobsearch-gates` contains the owner's home path;
+   ask whether that is fine to publish).
+2. Push `feature/privacy-layer` and open a PR to the fork's `master` (owner approval).
+3. The owner's acceptance run, which only the owner can do: `identity init` with the real
+   details, the launcher, `/setup`, `/apply` on a real posting, then `finalize`. Fix what
+   it turns up from finalize's redacted output.
+4. Optional: a `jobsearch` command on PATH. This is workstation config (chezmoi), so it
+   needs the owner's approval.
+
+Later:
+- Copilot login for the gate (deferred by the owner), then `creds copilot`.
+- Custom `/add-template` templates in finalize (now refused).
+- Repeat `rules` runs to estimate how reliably each CLI follows the rules.
+- The `creds` config checks pin only each CLI's own login file. A deny list that drops
+  another credential path would not fail them (the launcher hides those anyway).
+- Network egress allowlist in the launcher (exfiltration of drafts and `documents/`).
