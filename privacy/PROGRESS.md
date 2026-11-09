@@ -19,7 +19,7 @@ Branch: `feature/privacy-layer`.
 | `privacy/identity_cli.py`, `privacy/bin/identity` | `init`, `check`, `rekey`, `tokens` |
 | `privacy/texsubst.py` | token → escaped value; `\href`/`\url` targets get URL escaping |
 | `privacy/finalize.py`, `privacy/bin/finalize` | build real PDFs in a no-network, no-home bwrap jail; checks; redacted output |
-| `privacy/launcher/jobsearch.py` | agent jail: `/` read-only, repo writable except code/config that runs outside, CLI state writable except executable config, `private/` masked |
+| `privacy/launcher/jobsearch.py` | agent jail: `/` read-only; home hidden except toolchains (read-only), a per-CLI cache and the started CLI's state (writable except executable config); `/run/user` hidden; secret env dropped except the CLI's own login; repo writable except code/config that runs outside; `private/` masked |
 | `privacy/migrate.py`, `privacy/bin/migrate` | real values → tokens in workspace files (dry run by default; never `documents/`) |
 | `privacy/AGENT-RULES.md` | all agent-facing rules; read-only in the launcher |
 | `privacy/patches/0001-…` | one pointer line each in `CLAUDE.md`, `apply.md`, `setup.md`, `reset.md` |
@@ -48,16 +48,17 @@ Branch: `feature/privacy-layer`.
 | 2026-11-08 | 8c47a9e–d3d0468 | e2e prompt as plain workflow; write check; canaries in `private/` | `e2e claude` PASS through the read-only launcher: read visible file, wrote draft, `private/` empty, no canary leaked |
 
 | 2026-11-08 | 1661302–9c1d88c | migrate; agent rules; pointer patch | gate PASS (98, incl. upstream CI on a patched clone, migrate→finalize round trip); local mutants (no escaped forms, no phone rule) FAIL |
+| 2026-11-09 | e3c3884–317758b | credential masking: home allowlist, `/run/user` hidden, secret env filter, TeX cache in jail cache | gate PASS (123, incl. lualatex inside the launcher); mutants (no home mask, no env filter) FAIL; e2e and rules PASS for claude, codex, agy |
 | 2026-11-08 | 3866705–b380b42 | launcher protects Codex/Copilot/agy config; agy shim check; `~/.cache`; GEMINI.md, AGENTS.override.md; finalize workspace scan | gate PASS (108); e2e: claude, codex, agy PASS; rules: claude PASS, agy and codex FAIL then PASS after the pointer files; copilot blocked on login |
 
-### Runtime matrix (one run each; LLM behaviour is not deterministic)
+### Runtime matrix (rules: two runs each; LLM behaviour is not deterministic)
 
 | CLI | e2e | rules | Notes |
 |---|---|---|---|
-| Claude Code | PASS | PASS | reads `CLAUDE.md` → rules |
-| Codex | PASS | PASS | needs `AGENTS.override.md` (loads only one file per dir); helpers sit next to the resolved binary |
-| agy | PASS | PASS | needs `GEMINI.md`; rewrites `antigravity-cli/bin/agentapi` each start (launcher checks its content) |
-| Copilot | blocked | not run | login lives in the keyring (D-Bus) or `~/.config/gh`; neither is in the gate jail. Owner decision |
+| Claude Code | PASS | PASS ×2 | reads `CLAUDE.md` → rules |
+| Codex | PASS | PASS ×2 after fix | needs `AGENTS.override.md` (loads only one file per dir); helpers sit next to the resolved binary |
+| agy | PASS | PASS ×2 after fix | needs `GEMINI.md`; rewrites `antigravity-cli/bin/agentapi` each start (launcher checks its content) |
+| Copilot | blocked | not run | login lives in the keyring (D-Bus) or `~/.config/gh`; neither is in the gate jail. Deferred by the owner (2026-11-09) |
 
 ## Findings
 
@@ -75,13 +76,17 @@ Branch: `feature/privacy-layer`.
 - The provider's safeguards refused an adversarial e2e prompt; e2e now uses a workflow prompt.
 - Upstream's `check_framework_version.py` fails on any `AGENTS.md` change without a version
   bump, so non-Claude pointers live in fork-owned `AGENTS.override.md` and `GEMINI.md`.
-- The launcher hides `private/` but not credentials: `~/.ssh`, `~/.config/gh` and other CLIs'
-  logins are readable (read-only) inside it. Not an identity leak, but worth masking per CLI.
+- The launcher used to hide `private/` but not credentials (`~/.ssh`, `~/.config/gh`, other
+  CLIs' logins, shell history, other projects, the rclone mount, the ssh-agent socket in
+  `/run/user`). Fixed with a home allowlist (e3c3884) rather than a denylist, which would
+  miss unknown stores.
+- Residual: the started CLI's own login stays readable to its agent (the CLI needs it, and
+  its tools run in the same jail). So does anything in `HOME_TOOLCHAIN` and in `/etc`.
+  The `/run/user` mask is checked only in argv: the gate jail has no `/run/user`.
 - `Edit(tools/**)` is an upstream ask rule, so fork code lives in `privacy/`.
 
 ## Next
 
-1. Copilot login for the gate (owner decision), then `e2e`/`rules copilot`.
-2. Mask other credentials in the launcher (`~/.ssh`, `~/.config/gh`, other CLIs' auth).
-3. Repeat `rules` runs to estimate how reliably each CLI follows the rules.
-4. Custom `/add-template` templates in finalize (now refused).
+1. Copilot login for the gate (deferred by the owner).
+2. Repeat `rules` runs to estimate how reliably each CLI follows the rules.
+3. Custom `/add-template` templates in finalize (now refused).
