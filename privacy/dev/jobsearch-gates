@@ -420,7 +420,9 @@ PY
       agy_extra=(--settings /work/canary-settings.json --output-format stream-json
                  --print-timeout 600s) ;;
   esac
-  base+=(--ro-bind "$work/canary-settings.json" /work/canary-settings.json)
+  if [ -e "$work/canary-settings.json" ]; then
+    base+=(--ro-bind "$work/canary-settings.json" /work/canary-settings.json)
+  fi
 
   run_agent "${CREDS_PROMPT//NOTES_FILE/$notes}"
   creds_verdict "owner settings" || rc=1
